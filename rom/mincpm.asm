@@ -1,5 +1,5 @@
 ; ROM monitor/boot for Minimal CP/M System
-VERN	equ	000h	; ROM version
+VERN	equ	001h	; ROM version
 
 ; Memory map:
 ; 0 0000    ROM start
@@ -11,8 +11,6 @@ VERN	equ	000h	; ROM version
 
 false	equ	0
 true	equ	not false
-
-usedma	equ	true
 
 	$*macro
 
@@ -52,8 +50,12 @@ asxt	equ	12h
 
 ; RAM used...
 	org	02000h
-RegPC:	ds	2
-ABUSS:	ds	2
+savstk:	ds	2
+addr0:	ds	2
+addr1:	ds	2
+line:	ds	64
+
+stack	equ	00000h	; stack at top of memory (wrapped)
 
 ; Start of ROM code
 	org	00000h
@@ -91,98 +93,19 @@ rst7:	jmp	swtrap
 
 	; NMI not a problem?
 
-cmdtab:
-	; console commands
-	db	'D' ! dw cmddmp	; Dump memory
-	db	'G' ! dw cmdgo	; Go
-	db	'S' ! dw cmdsub	; Substitute in memory
-	db	'P' ! dw cmdpc	; Set PC
-	db	'B' ! dw cmdboot; Boot
-	db	'V' ! dw prtver	; Version of ROM
-numcmd	equ	($-cmdtab)/3
-
-; TODO: this needs a rewrite...
-re$entry:
-
-start:
-	lxi	h,prompt
-	call	msgout
-	call	cmdin
-	ani	11011111b	; toupper
-	lxi	h,cmdtab
-	mvi	b,numcmd
-cmloop:
-	cmp	m
-	inx	h
-	jrz	docmd
-	inx	h
-	inx	h
-	djnz	cmloop
-	; bad command...
-	call	belout
-	jmp	start
-
-docmd:
-	call	conout
-	mov	c,m
-	inx	h
-	mov	h,m
-	mov	l,c
-icall:	pchl
+swt:	db	CR,LF,'*** RST ',TRM
 
 swtrap:	; try to recover return address...
-	pop	h
-	shld	RegPC
-	; TODO: print address, etc...
-	jmp	start
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; PC command (set PC)
-cmdpc:
-	lxi	h,pcms
+	pop	d	; should be caller of RST...
+	lspd	savstk
+	push	d	; not needed?
+	lxi	h,swt
 	call	msgout
-	lhld	RegPC
-	lxi	d,RegPC	; HL=PC, DE=adr to store
-	call	inhexcr
-	jrc	cmdpc0	; hex digit entered
-	call	adrnl	; show current PC (HL)
-	call	inhexcr	; get another char
-	rnc	; CR entered, don't update value
-cmdpc0:
-	xchg	; HL=adr to store
-cmdpc1:
-	mvi	d,CR
-	jmp	adrin
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Go command
-cmdgo:
-	lxi	h,goms
-	call	msgout
-	lhld	RegPC
-	lxi	d,RegPC	; HL=PC, DE=adr to store
-	call	inhexcr
-	cc	cmdpc1	; read HEX until CR, store in HL
+	pop	d
+	call	taddr
 	call	crlf
-cmdgo0:
-	lhld	RegPC
-	pchl
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-cmdboot:
-	lxi	h,bootms
-	call	msgout	; complete (B)oot
-boot0:
-	call	conin
-	cpi	CR
-	jz	dfboot	; default boot, by phy drv...
-	call	belout
-	jr	boot0
-
-dfboot:	; TODO...
-	call	belout
-	jr	start
+	; TODO: print address, etc...
+	jmp	debug
 
 ; ROM start point - initialize everything
 ; We know we have at least 64K RAM...
@@ -204,171 +127,30 @@ init0:
 	out0	a,mmu$bbr
 	out0	a,mmu$cbr
 	; Now we have RAM for a stack...
-	lxi	sp,0ffffh
+	lxi	sp,stack
+	sspd	savstk
 	; for now, leave ROM in ROM...
-	lxi	h,re$entry
-	push	h
 	call	coninit
 	call	meminit
 	lxi	h,signon
 	call	msgout
 	; save registers on stack, for debugger access...
-	jmp	start
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Substitute command
-cmdsub:
-	lxi	h,subms
-	call	msgout
-	lxi	h,ABUSS
-	ora	a	; NC
-	mvi	d,CR
-	call	adrin
-	xchg
-cmdsub0:
-	call	adrnl
-	mov	a,m
-	call	hexout
-	call	spout
-cmdsub1:
-	call	hexin
-	jrnc	cmdsub4
-	cpi	CR
-	jrz	cmdsub2
-	cpi	'-'
-	jrz	cmdsub3
-	cpi	'.'
-	rz
-	call	belout
-	jr	cmdsub1
-cmdsub2:
-	inx	h
-	jr	cmdsub0
-cmdsub3:
-	call	conout
-	dcx	h
-	jr	cmdsub0
-cmdsub4:
-	mvi	m,000h
-cmdsub5:
-	call	conout
-	call	hexbin
-	rld
-	call	inhexcr
-	jrnc	cmdsub2
-	jr	cmdsub5
-
-inhexcr:
-	call	conin
-	cpi	CR
-	rz
-	call	hexchk
-	cmc
-	rc
-	call	belout
-	jr	inhexcr
+	jmp	debug
 
 belout:
-	mvi	a,BEL
+	mvi	c,BEL
+; Output char to console
+; C=char
 conout:
-	push	psw
 conot1:
+	in0	a,ctlb
+	ani	00100000b	; /CTS
+	jrnz	conot1
 	in0	a,stat
 	ani	00000010b	; TDRE
 	jrz	conot1
-	pop	psw
-	out0	a,tdr
+	out0	c,tdr
 	ret
-
-; D=term char (e.g. '.' for Substitute)
-; HL=location to store address
-; CY=first digit in A
-adrin:
-	push	h	; adr to store value
-	cnc	conin
-	cmp	d	; no input?
-	jz	adrin3
-	lxi	h,0
-	stc
-adrin0:	cnc	conin
-	call	hexchk
-	jrc	adrin1
-	call	conout
-	call	hexbin
-	dad	h
-	dad	h
-	dad	h
-	dad	h
-	ora	l
-	mov	l,a
-	jr	adrin0
-adrin1:
-	cmp	d
-	jrz	adrin2
-	call	belout
-	ora	a
-	jr	adrin0
-adrin2:
-	call	conout
-	xchg
-	pop	h
-	mov	m,e
-	inx	h
-	mov	m,d
-	ret
-
-hexbin:
-	sui	'9'+1
-	jrnc	hexbi0
-	adi	7
-hexbi0:
-	adi	3
-	ret
-
-hexin:
-	call	conin
-hexchk:
-	cpi	'0'
-	rc
-	cpi	'9'+1
-	cmc
-	rnc
-	cpi	'A'
-	rc
-	ani	05fh	; toupper
-	cpi	'A'
-	rc
-	cpi	'F'+1
-	cmc
-	ret
-
-; HL = adr to print
-adrnl:
-	call	crlf
-adrout:
-	mov	a,h
-	call	hexout
-	mov	a,l
-	call	hexout
-spout:
-	mvi	a,' '
-	jmp	conout
-
-hexout:
-	push	psw
-	rlc
-	rlc
-	rlc
-	rlc
-	call	hexdig
-	pop	psw
-hexdig:
-	ani	00fh
-	adi	090h
-	daa
-	aci	040h
-	daa
-	jmp	conout
 
 ; Based on 18.432MHz CPU clock... 115200 baud...
 ; ctla: MOD=8n1,  TE=1, RE=1
@@ -387,7 +169,6 @@ coninit:
 	; TODO: what else...
 	ret
 
-if use$dma
 ; DMA 00000-02000 into 80000-82000
 ; copy core ROM (8K) into 0000 using DMAC
 dmarom:
@@ -415,7 +196,6 @@ dmacpy:
 init1:	tstio	01000000b	; wait for DMAC to idle
 	jrnz	init1
 	ret
-endif
 
 adrin3:	pop	h
 	mov	e,m
@@ -425,68 +205,19 @@ adrin3:	pop	h
 
 ; initialize monitor memory variables
 meminit:
-	; Force known values
-	lxi	h,0
-	shld	ABUSS
-	shld	RegPC
+	; Force known values in RAM...
 	ret
 
-prompt:	db	CR,LF,'MinCPM'
-	db	': ',TRM
-bootms:	db	'oot ',TRM
-goms:	db	'o ',TRM
-subms:	db	'ubstitute ',TRM
-pcms:	db	'rog Counter ',TRM
-dmpms:	db	'ump ',TRM
+prompt:	db	CR,LF,': ',TRM
 
-waitcr:
-	call	conin
-	cpi	CR
-	jrnz	waitcr
-crlf:
-	mvi	a,CR
-	call	conout
-	mvi	a,LF
-	jmp	conout
-
-msgout:
-	mov	a,m
-	ora	a
-	rz
-	call	conout
-	inx	h
-	jr	msgout
-
-; called in the context of a command on console
+; Get char from console
+; Returns: A=char, stripped
 conin:	in0	a,stat
 	ani	10000000b	; RDRF
 	jrz	conin
 conin0:	in0	a,rdr
 	ani	07fh
-;	cpi	DEL	; DEL key restarts from anywhere?
-;	jz	re$entry
 	ret
-
-; wait for command - console or keypad
-cmdin:
-	jmp	conin
-
-; assume < 100
-decout:
-	mvi	d,'0'
-decot0:
-	sui	10
-	jc	decot1
-	inr	d
-	jmp	decot0
-decot1:
-	adi	10
-	adi	'0'
-	push	psw
-	mov	a,d
-	call	conout
-	pop	psw
-	jmp	conout
 
 ; TODO: preserve CPU regs for debug/front-panel
 ; (by the time we reach intsetup, everything is trashed)
@@ -498,20 +229,20 @@ trap:
 	dcx	h
 trap0:
 	mov	b,a
-	mvi	a,1111$1111b
+	mvi	a,1111$0010b	; ca at 0xF000, ba at 0x2000
 	out0	a,mmu$cbar
-	xra	a
-	out0	a,mmu$cbr
+	mvi	a,80h	; RAM is at 80000
 	out0	a,mmu$bbr
-	lxi	sp,0ffffh
+	out0	a,mmu$cbr
+	lxi	sp,stack
 	push	h
 	mov	a,b
 	ani	01111111b	; reset TRAP
 	out0	a,itc
 	lxi	h,trpms
 	call	msgout
-	pop	h
-	call	adrout
+	pop	d
+	call	taddr
 	call	crlf
 	jmp	init0
 
@@ -524,100 +255,502 @@ savram:	; TODO: implement this w/o DMAC?
 	call	dmacpy
 	ret
 
-linix:	mvi	m,0	; terminate buffer
-	ret
+signon:	db	CR,LF,'Minimal System Monitor v'
+vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
+	db	CR,LF,TRM
 
-; input a line from console, allow backspace
-; HL=buffer (size 128)
-; returns B=num chars, 128 max (never is 0c3h)
-linin:
-	mvi	b,0	; count chars
-lini0	call	conin	; handles DEL (cancel)
-	cpi	CR
-	jrz	linix
-	cpi	BS
-	jrz	backup
-	cpi	' '
-	jrc	chrnak
-	cpi	'~'+1
-	jrnc	chrnak
-chrok:	mov	m,a
-	inx	h
-	inr	b
-	jm	chrovf	; 128 chars max
-	call	conout
-	jr	lini0
-chrovf:	dcx	h
-	dcr	b
-chrnak:	mvi	a,BEL
-	call	conout
-	jr	lini0
-backup:
-	mov	a,b
-	ora	a
-	jrz	lini0
-	dcr	b
-	dcx	h
-	mvi	a,BS
-	call	conout
-	mvi	a,' '
-	call	conout
-	mvi	a,BS
-	call	conout
-	jr	lini0
+errm:	db	CR,LF,BEL,'?',TRM
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Dump command
-cmddmp:
-	lxi	h,dmpms
-	call	msgout
-	lxi	h,ABUSS
-	ora	a	; NC
-	mvi	d,CR
-	call	adrin
-	xchg	; HL=adr
-	mvi	b,8	; 8 lines (one half page, 128 bytes)
-dmp0:	push	b
-	call	adrnl	; CR,LF,"AAAA " (HL=AAAA)
+*********************************************************
+**  Debug mode
+*********************************************************
+
+debug:
+cilp:	lspd	savstk
+	lxi	h,cilp		;setup return address
 	push	h
-	mvi	b,16
-dmp1:	mov	a,m
-	call	hexout
-	call	spout
+	lxi	h,prompt	;prompt for a command
+	call	msgout
+	call	linein		;wait for command line to be entered
+	lxi	d,line
+	call	char		;get first character
+	rz			;ignore line if it is empty
+	lxi	h,comnds	;search table for command character
+	mvi	b,ncmnds	;(number of commands)
+cci0:	cmp	m		;search command table
 	inx	h
-	djnz	dmp1
-	pop	h
-	mvi	b,16
-dmp2:	mov	a,m
+	jrz	gotocmd		;command was found, execute it
+	inx	h		;step past routine address
+	inx	h
+	djnz	cci0		;loop untill all valid commands are checked
+error	lxi	h,errm		;if command unknown, beep and re-prompt
+	jmp	msgout
+
+gotocmd:
+	push	d		;save command line buffer pointer
+	mov	e,m		;get command routine address
+	inx	h
+	mov	d,m		;DE = routine address
+	xchg			;HL = routine address
+	pop	d		;restore buffer pointer
+	pchl			;jump to command routine
+
+comnds:
+	db	'?'
+	dw	Qcomnd
+	db	'D'
+	dw	Dcomnd
+	db	'S'
+	dw	Scomnd
+	db	'G'
+	dw	Gcomnd
+	db	'M'
+	dw	Mcomnd
+	db	'F'
+	dw	Fcomnd
+	db	'I'
+	dw	Icomnd
+	db	'O'
+	dw	Ocomnd
+	db	'V'
+	dw	Vcomnd
+ncmnds	equ	($-comnds)/3
+
+*********************************************************
+**  Command subroutines
+*********************************************************
+
+menu:	db	CR,LF,'D <start> <end> - display memory in HEX'
+	db	CR,LF,'S <start> - set/view memory'
+	db	CR,LF,'G <start> - go to address'
+	db	CR,LF,'F <start> <end> <data> - fill memory'
+	db	CR,LF,'M <start> <end> <dest> - Move data'
+	db	CR,LF,'I <port> - Input from port'
+	db	CR,LF,'O <port> <value> - Output to port'
+	db	CR,LF,'V - Show ROM version'
+	db	0
+
+Qcomnd:	lxi	h,menu
+	jmp	msgout
+
+Mcomnd:	call	getaddr
+	jc	error
+	bit	7,b
+	jnz	error
+	shld	addr0
+	call	getaddr
+	jc	error
+	bit	7,b
+	jnz	error
+	shld	addr1
+	call	getaddr
+	jc	error
+	bit	7,b
+	jnz	error
+	xchg
+	lbcd	addr0
+	lhld	addr1
+	ora	a
+	dsbc	b
+	jc	error
+	inx	h
+	mov	c,l
+	mov	b,h
+	push	d
+	xchg
+	dad	b
+	pop	d
+	jc	error
+	lhld	addr1
+	call	check
+	jc	mc0
+	lhld	addr0
+	call	check
+	jnc	mc0
+	lhld	addr1
+	xchg
+	dad	b
+	dcx	h
+	xchg
+	lddr
+	ret
+mc0:	lhld	addr0
+	ldir
+	ret
+Fcomnd:
+	call	getaddr ;get address to start at
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no address (different from 0000)
+	jnz	error	;error if no address was entered
+	shld	addr0	;save starting address
+	call	getaddr ;get stop address
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no entry
+	jnz	error	;error if no stop address
+	shld	addr1	;save stop address
+	call	getaddr ;get fill data
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no entry
+	jnz	error	;error if no fill data
+	mov	a,h
+	ora	a
+	jnz	error
+	mov	c,l	;(C)=fill data
+	lhld	addr1	;get stop address
+	lded	addr0	;get start address
+fc0:	mov	a,c	;
+	stax	d	;put byte in memory
+	inx	d	;step to next byte
+	mov	a,d	;
+	ora	e	;if we reach 0000, stop. (don't wrap around)
+	rz		;
+	call	check	;test for past stop address
+	rc	;quit if past stop address
+	jr	fc0
+
+Dcomnd:		;display memory
+	call	getaddr ;get address to start at
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no address (different from 0000)
+	jnz	error	;error if no address was entered
+	shld	addr0	;save starting address
+	call	getaddr ;get stop address
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no entry
+	jnz	error	;error if no stop address
+	lded	addr0	;get start address into (DE)
+dis0:	call	crlf	;start on new line
+	call	taddr	;print current address
+	call	space	;delimit it from data
+	mvi	b,16	;display 16 bytes on each line
+dis1:	ldax	d	;get byte to display
+	inx	d	;step to next byte
+	call	hexout	;display this byte in HEX
+	call	space	;delimit it from others
+	mov	a,d
+	ora	e	;if we reach 0000, stop. (don't wrap around)
+	jrz	dis2
+	call	check	;test for past stop address
+	jrc	dis2	;quit if past stop address
+	djnz	dis1	;else do next byte on this line
+dis2:	call	space	;delimit it from data
+	call	space
+	lded	addr0
+	mvi	b,16	;display 16 bytes on each line
+dis3:	ldax	d	;get byte to display
+	inx	d	;step to next byte
+	mvi	c,'.'
 	cpi	' '
-	jrc	dmp3
+	jrc	dis4
 	cpi	'~'+1
-	jrc	dmp4
-dmp3:	mvi	a,'.'
-dmp4:	call	conout
-	inx	h
-	djnz	dmp2
-	pop	b
-	djnz	dmp0
-	shld	ABUSS
+	jrnc	dis4
+	mov	c,a
+dis4:	call	conout
+	mov	a,d
+	ora	e	;if we reach 0000, stop. (don't wrap around)
+	rz
+	call	check	;test for past stop address
+	rc	;quit if past stop address
+	djnz	dis3	;else do next byte on this line
+	sded	addr0
+	jr	dis0	;when line is finished, start another
+
+Scomnd: 		;substitute (set) memory
+	call	getaddr ;get address to start substitution at
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no entry
+	jnz	error	;error if no address
+	xchg		;put address in (DE)
+sb1:	call	crlf	;start on new line
+	call	taddr	;print address
+	call	space	;and delimit it
+	ldax	d	;get current value of byte
+	call	hexout	;and display it
+	call	space	;delimit it from user's (posible) entry
+	mvi	b,0	;zero accumilator for user's entry
+sb2:	call	conin	;get user's first character
+	cpi	CR	;if CR then skip to next byte
+	jrz	foward
+	cpi	' '	;or if Space then skip to next
+	jrz	foward
+	cpi	'-'	;if Minus then step back to previous address
+	jrz	bakwrd
+	cpi	'.'	;if Period then stop substitution
+	rz
+	call	hexcon	;if none of the above, should be HEX digit
+	jrc	error0	;error if not
+	jr	sb3	;start accumilating HEX digits
+sb0:	call	hexcon	;test for HEX digit
+	jrc	error1	;error if not HEX
+sb3:	slar	b	;roll accumilator to receive new digit
+	slar	b
+	slar	b
+	slar	b
+	ora	b	;merge in new digit
+	mov	b,a
+sb4:	call	conin	;get next character
+	cpi	CR	;if CR then put existing byte into memory
+	jrz	putbyte ;  and step to next.
+	cpi	'.'
+	rz
+	cpi	del	;if DEL then restart at same address
+	jrz	sb1
+	jr	sb0	;else continue entering hex digits
+putbyte:
+	mov	a,b	;store accumilated byte in memory
+	stax	d
+foward:
+	inx	d	;step to next location
+	jr	sb1	;and allow substitution there
+
+bakwrd:
+	dcx	d	;move address backward one location
+	jr	sb1
+
+error0:	call	belout	;user's entry was not valid, beep and continue
+	jr	sb2
+error1:	call	belout	;same as above but for different section of routine
+	jr	sb4
+
+Gcomnd: 		;jump to address given by user
+	call	getaddr ;get address to jump to
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no entry
+	jnz	error	;error if no address entered
+	call	crlf	;on new line,
+	mvi	c,'G'	;display "GO aaaa?" to ask
+	call	conout	;user to verify that we should
+	mvi	c,'O'	;jump to this address (in case user
+	call	conout	;made a mistake we should not blindly
+	call	space	;commit suicide)
+	xchg
+	call	taddr
+	call	space
+	mvi	c,'?'
+	call	conout
+	call	conin	;wait for user to type "Y" to
+	cpi	'Y'	;indicate that we should jump.
+	rnz		;abort if response was not "Y"
+	xchg
+	pchl		;else jump to address
+
+inpms:	db	CR,LF,'Input ',TRM
+Icomnd:
+	call	getaddr ;get port address, ignore extra MSDs
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no entry
+	jnz	error	;error if no address entered
+	push	h	; save port
+	lxi	h,inpms
+	call	msgout
+	pop	h
+	push	h
+	mov	a,l
+	call	hexout
+	call	space
+	mvi	c,'='
+	call	conout
+	call	space
+	pop	b	; port to BC
+	mvi	b,0	; safety
+	inp	a
+	call	hexout
+	call	crlf
 	ret
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Print ROM version command
-prtver:
+; TODO: no feedback?
+Ocomnd:
+	call	getaddr ;get port address, ignore extra MSDs
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no entry
+	jnz	error	;error if no address entered
+	push	h	; save port
+	call	getaddr ;get value, ignore extra MSDs
+	jc	error	;error if non-hex character
+	bit	7,b	;test for no entry
+	jnz	error	;error if no value entered
+	call	crlf
+	pop	b	; port
+	mvi	b,0	; safety
+	outp	l
+	ret
+
+versms:	db	'Version ',TRM
+
+Vcomnd:
 	lxi	h,versms
 	call	msgout
 	lxi	h,vernum
-	call	msgout
+	jmp	msgout
+
+*********************************************************
+**  Utility subroutines
+*********************************************************
+
+taddr:	mov	a,d	;display (DE) at console in HEX
+	call	hexout	;print HI byte in HEX
+	mov	a,e	;now do LO byte
+hexout:	push	psw	;output (A) to console in HEX
+	rlc		;get HI digit in usable (LO) position
+	rlc
+	rlc
+	rlc
+	call	nible	;and display it
+	pop	psw	;get LO digit back and display it
+nible:	ani	00001111b	;display LO 4 bits of (A) in HEX
+	adi	90h	;algorithm to convert 4-bits to ASCII
+	daa
+	aci	40h
+	daa
+	mov	c,a	;display ASCII digit
+	jmp	conout
+
+space:	mvi	c,' '	;send an ASCII blank to console
+	jmp	conout
+
+crlf:	mvi	c,CR	;send Carriage-Return/Line-Feed to console
+	call	conout
+	mvi	c,LF
+	jmp	conout
+
+msgout:	mov	a,m	;send string to console, terminated by 00
+	ora	a
+	rz
+	rm
+	mov	c,a
+	call	conout
+	inx	h
+	jr	msgout
+
+check:	push	h	;non-destuctive compare HL:DE
+	ora	a
+	dsbc	d
+	pop	h
 	ret
 
-versms:	db	'ersion ',TRM
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Convert letters to upper-case
+toupper:
+	cpi	'a'
+	rc
+	cpi	'z'+1
+	rnc
+	ani	01011111b
+	ret
 
-signon:	db	CR,LF,'MinCPM'
-	db	' Monitor v'
-vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
-	db	CR,LF,TRM
+; Read a line of text into 'line'
+; End with CR, honor BS
+; Reject all non-printing characters, force toupper
+linein:	lxi	h,line	;get string of characters from console, ending in CR
+li0:	call	conin	;get a character
+	cpi	BS	;allow BackSpacing
+	jrz	backup
+	cpi	CR
+	jrz	li1
+	cpi	' '	;ignore other non-print
+	jrc	li0
+	call	toupper
+	mov	m,a	;put character in line nuffer
+	inx	h
+	mov	c,a
+	call	conout	; echo character
+	mov	a,l	;else check for pending buffer overflow
+	sui	line mod 256
+	cpi	64
+	rz		;stop if buffer full
+	jr	li0	;if not full, keep getting characters
+
+backup:	mov	a,l	;(destructive) BackSpacing
+	cpi	line mod 256	;test if at beginning of line
+	jrz	li0	;can't backspace past start of line
+	mvi	c,bs	;output BS," ",BS to erase character on screen
+	call	conout	;and put cursor back one position
+	call	space
+	mvi	c,bs
+	call	conout
+	dcx	h	;step buffer pointer back one
+	jr	li0	;and continue to get characters
+
+; End line input, A=CR
+li1:	mov	m,a	; store CR in buffer
+	mvi	c,CR	;display CR so user knows we got it
+	jmp	conout	;then return to calling routine
+
+; Get next character from line buffer.
+; DE=current pointer within 'line'
+; Returns: ZR=EOL else A=char
+char:	mov	a,e	;remove a character from line buffer,
+	sui	line mod 256	;testing for no more characters
+	sui	64
+	rz		;return [ZR] condition if at end of buffer
+	ldax	d
+	cpi	CR
+	rz		;also return [ZR] if at end of line
+	inx	d	;else step to next character
+	ret		;and return [NZ]
+
+; Get HEX value from line buffer
+; Return: CY=error, HL=value, bit7(B)=1 if no input
+getaddr:		;extract address from line buffer (dilimitted by " ")
+	setb	7,b	;flag to detect no address entered
+	lxi	h,0
+ga2:	call	char
+	rz		;end of buffer/line before a character was found
+	cpi	' '	;skip all leading spaces
+	jrnz	ga1	;if not space, then start getting HEX digits
+	jr	ga2	;else if space, loop untill not space
+
+ga0:	call	char
+	rz
+ga1:	call	hexcon	;start assembling digits into 16 bit accumilator
+	jrc	chkdlm	;check if valid delimiter before returning error.
+	res	7,b	;reset flag
+	push	d	;save buffer pointer
+	mov	e,a
+	mvi	d,0
+	dad	h	;shift "accumilator" left 1 digit
+	dad	h
+	dad	h
+	dad	h
+	dad	d	;add in new digit
+	pop	d	;restore buffer pointer
+	jr	ga0	;loop for next digit
+
+chkdlm: cpi	' '	;blank is currently the only valid delimiter
+	rz
+	stc
+	ret
+
+hexcon: 		;convert ASCII character to HEX digit
+	cpi	'0'	;must be .GE. "0"
+	rc
+	cpi	'9'+1	;and be .LE. "9"
+	jrc	ok0	;valid numeral.
+	cpi	'A'	;or .GE. "A"
+	rc
+	cpi	'F'+1	;and .LE. "F"
+	cmc
+	rc		;return [CY] if not valid HEX digit
+	sui	'A'-'9'-1	;convert letter
+ok0:	sui	'0'	;convert (numeral) to 0-15 in (A)
+	ret
+
+; Print A to console as decimal (00-99)
+decout:
+	mvi	d,'0'
+decot0:
+	sui	10
+	jc	decot1
+	inr	d
+	jmp	decot0
+decot1:
+	adi	10
+	adi	'0'
+	push	psw
+	mov	c,d
+	call	conout
+	pop	psw
+	mov	c,a
+	jmp	conout
 
 	rept	2000h-$
 	db	0ffh
