@@ -4,6 +4,7 @@ import java.util.Vector;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.Properties;
+import java.io.*;
 
 import z80core.*;
 
@@ -37,13 +38,34 @@ public class MinimalCPM implements Computer, Runnable {
 		cpuLock = new ReentrantLock();
 		clks = new Vector<ClockListener>();
 		times = new Vector<TimeListener>();
-
+		String s = props.getProperty("log");
+		if (s != null) {
+			String[] args = s.split("\\s");
+			boolean append = false;
+			for (int x = 1; x < args.length; ++x) {
+				if (args[x].equals("a")) {
+					append = true;
+				}
+			}
+			try {
+				FileOutputStream fo = new FileOutputStream(args[0], append);
+				PrintStream ps = new PrintStream(fo, true);
+				System.setErr(ps);
+			} catch (Exception ee) {}
+		}
+		s = props.getProperty("configuration");
+		if (s == null) {
+			System.err.format("No config file found - using defaults\n");
+		} else {
+			System.err.format("Using configuration from %s\n", s);
+		}
+		// Now build hardware...
 		asci = new Z180ASCI(props);
 		cpu = new Z180(this, asci);
 		mem = new SimpleRAM_ROM(props);
 		disas = new Z180DisassemblerMAC80(mem, cpu);
 
-		String s = props.getProperty("trace");
+		s = props.getProperty("trace");
 		if (s != null) {
 			Vector<String> ret = new Vector<String>();
 			traceCommand(s.split("\\s"), ret);

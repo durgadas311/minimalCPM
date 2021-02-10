@@ -54,11 +54,6 @@ public class Z180ASCI implements ComputerIO {
 	static final int asxt_dcde = 0x40;	// /DCD halts Rx (ch 0 only)
 	static final int asxt_rdrf = 0x80;	// 
 
-	private int reg_ctla = 0;
-	private int reg_ctlb = 0;
-	private int reg_stat = 0;
-	private int reg_asxt = 0;
-
 	private Z180ASCIChan[] ports = new Z180ASCIChan[2];
 
 	public Z180ASCI(Properties props) {
@@ -104,13 +99,17 @@ public class Z180ASCI implements ComputerIO {
 		private int bits; // bits per character
 		private int index;
 		private Z180ASCIChan chA; // null on Ch A
-		private int mdms = 0;	// modem inputs, floating
-		private int modem = -1;
+		private int modem = 0;	// modem inputs, floating
 		private Semaphore wait;
 
 		private SerialDevice io = null;
 		private boolean io_in;
 		private boolean io_out;
+
+		private int reg_ctla = 0;
+		private int reg_ctlb = 0;
+		private int reg_stat = 0;
+		private int reg_asxt = 0;
 
 		public Z180ASCIChan(Properties props, String pfx, int idx, Z180ASCIChan alt) {
 			chA = alt;
@@ -246,13 +245,14 @@ public class Z180ASCI implements ComputerIO {
 		public void reset() {
 			fifo.clear();
 			fifi.clear();
-			reg_ctla = 0;
-			reg_ctlb = ctlb_baud; // EXT clock by default
-			reg_stat = stat_tdre;
+			reg_ctla = ctla_rts; // RTS off by default
+			reg_ctlb = ctlb_baud | ctlb_cts; // EXT clock, CTS off, by default
+			reg_stat = stat_tdre | stat_dcd; // TDRE on, DCD off, by default
 			reg_asxt = 0;
-			// TODO: update stat_dcd, ctlb_cts, others?
+			// TODO: update other bits?
 			wait.release();
 			updateModemForce();
+			_setModem();
 		}
 
 		////////////////////////////////////////////////////
@@ -306,21 +306,36 @@ public class Z180ASCI implements ComputerIO {
 			// Needed for SYNC modes.
 		}
 
+		private void _setModem() {
+			// modem controls in registers are inverted...
+			reg_ctlb |= ctlb_cts;	// assume OFF
+			if ((modem & VirtualUART.SET_CTS) != 0) {
+				reg_ctlb &= ~ctlb_cts; // set ON
+			}
+			reg_stat |= stat_dcd;	// assume OFF
+			if ((modem & VirtualUART.SET_DCD) != 0) {
+				reg_stat &= ~stat_dcd;	// set ON
+			}
+			// no one to notify if things change?
+			//System.err.format("%c: _setModem() %04x ctlb=%02x stat=%02x\n",
+			//	index + '0', modem, reg_ctlb, reg_stat);
+		}
+
 		public void setModem(int mdm) {
+			//System.err.format("%c: setModem(%04x) start ctlb=%02x stat=%02x\n",
+			//	index + '0', mdm, reg_ctlb, reg_stat);
 			int nuw = 0;
 			// This requires (ctlb_cts != stat_dcd)!
 			if ((mdm & VirtualUART.SET_CTS) != 0) {
-				nuw |= ctlb_cts;
+				nuw |= VirtualUART.SET_CTS;
 			}
 			if ((mdm & VirtualUART.SET_DCD) != 0) {
-				nuw |= stat_dcd;
+				nuw |= VirtualUART.SET_DCD;
 			}
-			int diff = (mdms ^ nuw) & (ctlb_cts | stat_dcd);
-			mdms &= ~(ctlb_cts | stat_dcd);
-			mdms |= nuw;
-			reg_ctlb = (reg_ctlb & ~ctlb_cts) | (nuw & ctlb_cts);
-			reg_stat = (reg_stat & ~stat_dcd) | (nuw & stat_dcd);
-			// no one to notify if things change?
+			int diff = (modem ^ nuw) & (VirtualUART.SET_CTS | VirtualUART.SET_CTS);
+			modem &= ~(VirtualUART.SET_CTS | VirtualUART.SET_CTS);
+			modem |= nuw;
+			_setModem();
 		}
 		// For some reason, "synchronized" is required to ensure
 		// we always return the latest values. Probably don't
@@ -334,10 +349,10 @@ public class Z180ASCI implements ComputerIO {
 						(asxt_brke | asxt_brk)) {
 				mdm |= VirtualUART.GET_BREAK;
 			}
-			if ((mdms & ctlb_cts) != 0) {
+			if ((modem & VirtualUART.SET_CTS) != 0) {
 				mdm |= VirtualUART.SET_CTS;
 			}
-			if ((mdms & stat_dcd) != 0) {
+			if ((modem & VirtualUART.SET_DCD) != 0) {
 				mdm |= VirtualUART.SET_DCD;
 			}
 			return mdm;
@@ -375,7 +390,9 @@ public class Z180ASCI implements ComputerIO {
 
 		// Force a changeModem() event.
 		private void updateModemForce() {
+			//System.err.format("%c: updateModemForce() %04x\n", index + '0', modem);
 			modem = getModem() ^ VirtualUART.GET_ONLY; // force event?
+			//System.err.format("%c: updateModemForce() modem=%04x\n", index + '0', modem);
 			updateModemOut();
 		}
 
@@ -391,6 +408,7 @@ public class Z180ASCI implements ComputerIO {
 				mdm |= VirtualUART.GET_BREAK;
 			}
 			int diff = (mdm ^ modem) & VirtualUART.GET_ONLY;
+			//System.err.format("%c: updateModemOut() %04x <= %04x\n", index + '0', modem, mdm);
 			modem = mdm;
 			if (diff != 0) {
 				io.modemChange(this, modem);

@@ -128,13 +128,14 @@ public class TelnetSerial implements SerialDevice, Runnable {
 
 	// Should not get here unless conn == null...
 	private void tryConn(Socket nc) {
-		if (conn != null || modem &&
-			(uart.getModem() & VirtualUART.GET_DTR) == 0) {
-			try {
-				nc.close();
-			} catch (Exception ee) {}
-			return;
-		}
+// TODO: any feedback possible here? no DTR exists...
+//		if (conn != null || modem &&
+//			(uart.getModem() & VirtualUART.GET_DTR) == 0) {
+//			try {
+//				nc.close();
+//			} catch (Exception ee) {}
+//			return;
+//		}
 		conn = nc;
 		try {
 			InetAddress ia = conn.getInetAddress();
