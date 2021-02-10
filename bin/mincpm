@@ -1,0 +1,8 @@
+#!/bin/bash
+# Example script to set stdio "raw" while running VirtualMinCpm.jar StdioSerial.
+# Requires that the "log" property be set to keep console session clean.
+
+# Set stdio to unbuffered/raw, and set interrupt character to allow ^C use.
+stty raw -echo isig intr '^]' susp '^-' 
+java -jar VirtualMinCpm.jar "${@}"
+stty cooked echo intr '^C' susp '^Z'

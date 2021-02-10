@@ -33,6 +33,7 @@ ship: __FRC__
 VirtualMinCpm.jar: all temp
 	echo "Main-Class: VirtualMinCpm" >Manifest.txt
 	jar -cmf Manifest.txt VirtualMinCpm.jar *.class \
+		*.rom \
 		-C temp .
 
 temp: __FRC__
