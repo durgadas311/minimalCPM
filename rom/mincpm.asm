@@ -1,5 +1,5 @@
 ; ROM monitor/boot for Minimal CP/M System
-VERN	equ	001h	; ROM version
+VERN	equ	002h	; ROM version
 
 ; Memory map:
 ; 0 0000    ROM start
@@ -16,6 +16,7 @@ true	equ	not false
 
 CR	equ	13
 LF	equ	10
+CTLC	equ	3
 BEL	equ	7
 TAB	equ	9
 BS	equ	8
@@ -56,6 +57,16 @@ addr1:	ds	2
 line:	ds	64
 
 stack	equ	00000h	; stack at top of memory (wrapped)
+
+; relative locations in cpnos (.sys) image
+memtop	equ	0	; top of memory, 00 = 64K
+comlen	equ	1	; common length
+bnktop	equ	2	; banked top (not used)
+bnklen	equ	3	; banked length (00)
+entry	equ	4	; entry point of OS
+org0	equ	16	; not used(?)
+load	equ	128	; load map/message ('$' terminated)
+recs	equ	256	; records to load, top-down
 
 ; Start of ROM code
 	org	00000h
@@ -169,8 +180,8 @@ coninit:
 	; TODO: what else...
 	ret
 
-; DMA 00000-02000 into 80000-82000
-; copy core ROM (8K) into 0000 using DMAC
+; DMA 00000... into 80000... (8K)
+; i.e. copy core ROM (8K) into RAM using DMAC
 dmarom:
 	lxi	h,0000h	; page addr (256B)
 	lxi	d,0800h	; page addr (256B)
@@ -197,12 +208,6 @@ init1:	tstio	01000000b	; wait for DMAC to idle
 	jrnz	init1
 	ret
 
-adrin3:	pop	h
-	mov	e,m
-	inx	h
-	mov	d,m
-	ret
-
 ; initialize monitor memory variables
 meminit:
 	; Force known values in RAM...
@@ -215,12 +220,38 @@ prompt:	db	CR,LF,': ',TRM
 conin:	in0	a,stat
 	ani	10000000b	; RDRF
 	jrz	conin
-conin0:	in0	a,rdr
+	in0	a,rdr
 	ani	07fh
 	ret
 
-; TODO: preserve CPU regs for debug/front-panel
-; (by the time we reach intsetup, everything is trashed)
+; For CP/NET boot, wait long timeout for one char
+; Return: CY=timeout else A=char
+; At 115200, one char is 1600 cycles...
+conin0:
+	mvi	d,20	; 20x = 3.1 seconds
+coni0:	; loop = 156mS
+	lxi	b,0		; 65536 * 44 = 2883584
+coni1:
+	in0	a,stat		; 12
+	ani	10000000b	;  6
+	jrnz	coni2		;  6 (n)
+	dcx	b		;  4
+	mov	a,b		;  4
+	ora	c		;  4
+	jrnz	coni1		;  8 (t) = 44
+	dcr	d
+	jrnz	coni0
+	stc
+	ret
+coni2:	in0	a,rdr	; CY=0 from ANI
+	ret
+
+; For CP/NET boot, wait short timeout for next char
+conin1:
+	mvi	d,2	; 2x = 312mS for next char
+	jr	coni0
+
+; TODO: preserve CPU regs for debug
 trap:
 	pop	h
 	dcx	h
@@ -247,13 +278,6 @@ trap0:
 	jmp	init0
 
 trpms:	db	CR,LF,'*** TRAP ',TRM
-
-savram:	; TODO: implement this w/o DMAC?
-	lxi	h,000h	; save from 00000h
-	lxi	d,300h	; save into 30000h
-	lxi	b,16*1024	; save all 16K
-	call	dmacpy
-	ret
 
 signon:	db	CR,LF,'Minimal System Monitor v'
 vernum:	db	(VERN SHR 4)+'0','.',(VERN AND 0fh)+'0'
@@ -298,6 +322,8 @@ gotocmd:
 comnds:
 	db	'?'
 	dw	Qcomnd
+	db	'B'
+	dw	Bcomnd
 	db	'D'
 	dw	Dcomnd
 	db	'S'
@@ -320,7 +346,9 @@ ncmnds	equ	($-comnds)/3
 **  Command subroutines
 *********************************************************
 
-menu:	db	CR,LF,'D <start> <end> - display memory in HEX'
+menu:
+	db	CR,LF,'B [string] - boot'
+	db	CR,LF,'D <start> <end> - display memory in HEX'
 	db	CR,LF,'S <start> - set/view memory'
 	db	CR,LF,'G <start> - go to address'
 	db	CR,LF,'F <start> <end> <data> - fill memory'
@@ -575,13 +603,74 @@ Ocomnd:
 	outp	l
 	ret
 
-versms:	db	'Version ',TRM
+versms:	db	CR,LF,'Version ',TRM
 
 Vcomnd:
 	lxi	h,versms
 	call	msgout
 	lxi	h,vernum
 	jmp	msgout
+
+; Boot
+; currently, boot image is at 'cpnos'.
+; future: network boot using optional string.
+; TODO: support both? requires extra syntax.
+Bcomnd:	; for now, no options, entire image in memory (ROM)
+	; but, need to reveal image using mmu$bbr.
+	; slide window up to 32K boundary
+	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
+	out0	a,mmu$cbar
+	lxi	h,cpnos+load
+	call	print
+	; TODO: move stack? do this inline to avoid stack issues
+	; Once we start loading, we destroy high memory.
+	lxi	h,cpnos+recs	; HL=source of data
+	lda	cpnos+comlen	; honor possible variations...
+	ora	a
+	jrz	boot1
+	add	a	; num records (128B)
+	mov	b,a
+	lda	cpnos+memtop
+	mov	d,a
+	mvi	e,0	; DE=destination (backwards)
+	mov	a,b
+	lxi	b,-128
+	xchg
+	dad	b
+	xchg
+	; A = count
+boot3:
+	lxi	b,128	; 128B at a time
+	ldir
+	dcr	d	; DE + 128 - 256
+	dcr	a
+	jrnz	boot3
+boot1:
+	lda	cpnos+bnklen	; honor possible variations...
+	ora	a
+	jz	boot2
+	; never used for CP/NOS?
+	add	a	; num records (128B)
+	mov	b,a
+	lda	cpnos+bnktop
+	mov	d,a
+	mvi	e,0	; DE=destination (backwards)
+	mov	a,b
+	lxi	b,-128
+	xchg
+	dad	b
+	xchg
+	; A = count
+boot4:
+	lxi	b,128	; 128B at a time
+	ldir
+	dcr	d	; DE + 128 - 256
+	dcr	a
+	jrnz	boot4
+boot2:	; TODO: if we loaded nothing, DON'T JUMP
+	; CP/NOS BIOS will reset mmu$cbar
+	lhld	cpnos+entry
+	pchl
 
 *********************************************************
 **  Utility subroutines
@@ -616,11 +705,18 @@ crlf:	mvi	c,CR	;send Carriage-Return/Line-Feed to console
 msgout:	mov	a,m	;send string to console, terminated by 00
 	ora	a
 	rz
-	rm
 	mov	c,a
 	call	conout
 	inx	h
 	jr	msgout
+
+print:	mov	a,m	; BDOS func 9 style msgout
+	cpi	'$'
+	rz
+	mov	c,a
+	call	conout
+	inx	h
+	jr	print
 
 check:	push	h	;non-destuctive compare HL:DE
 	ora	a
@@ -646,6 +742,8 @@ li0:	call	conin	;get a character
 	jrz	backup
 	cpi	CR
 	jrz	li1
+	cpi	CTLC
+	jrz	liZ
 	cpi	' '	;ignore other non-print
 	jrc	li0
 	call	toupper
@@ -674,6 +772,14 @@ backup:	mov	a,l	;(destructive) BackSpacing
 li1:	mov	m,a	; store CR in buffer
 	mvi	c,CR	;display CR so user knows we got it
 	jmp	conout	;then return to calling routine
+
+; Abort input
+liZ:	mvi	c,'^'
+	call	conout
+	mvi	c,'C'
+	call	conout
+	pop	h	; always OK?
+	ret		; return to caller's caller (main debug loop)
 
 ; Get next character from line buffer.
 ; DE=current pointer within 'line'
@@ -758,5 +864,6 @@ decot1:
 if	($ <> 2000h)
 	.error 'core ROM overrun'
 endif
+cpnos:	ds	0	; cpnos.sys appended here...
 
 	end
