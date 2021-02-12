@@ -49,4 +49,7 @@ mincpm.tgz: __FRC__
 	cd ..; tar -czf sim/mincpm.tgz sim/Makefile \
 		sim/*.java
 
+ship:
+	rsync -Wuv VirtualMinCpm.jar ../bin
+
 __FRC__:
