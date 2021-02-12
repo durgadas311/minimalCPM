@@ -75,7 +75,7 @@ public class ROM implements Memory {
 	}
 
 	public int read(boolean rom, int bank, int address) {
-		address &= 0x1fff; // 8K only
+		address &= msk;
 		return mem[address] & 0xff;
 	}
 
