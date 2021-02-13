@@ -1,0 +1,27 @@
+#!/bin/bash
+# Example Wrapper script to startup CpnetSerialServer on Linux, possibly MAC.
+# change (at least) "/path/to/" to match your actual paths.
+
+if [[ -n ${JAR1} ]]; then
+	# Assume jar name and main class match...
+	CLASS=${JAR1##*/}
+	CLASS=${CLASS%.jar}
+else
+	CLASS=CpnetSerialServer
+	JAR1=${HOME}/path/to/${CLASS}.jar
+fi
+JAR2=${HOME}/path/to/jSerialComm-2.6.2.jar
+
+if [[ -L ${JAR2} ]]; then
+	JAR2=$(readlink -f ${JAR2})
+fi
+if [[ ! -f ${JAR1} ]]; then
+	echo "Missing: ${JAR1}" >&2
+	exit 1
+fi
+if [[ ! -f ${JAR2} ]]; then
+	echo "Missing: ${JAR2}" >&2
+	exit 1
+fi
+
+java -cp ${JAR1}:${JAR2} ${CLASS} "${@}"

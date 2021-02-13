@@ -1,5 +1,5 @@
 ; ROM monitor/boot for Minimal CP/M System
-VERN	equ	002h	; ROM version
+VERN	equ	003h	; ROM version
 
 ; Memory map:
 ; 0 0000    ROM start
