@@ -26,3 +26,6 @@ cpnos.sys: cobdos.spr cobios.spr ndos.spr snios.spr
 		-snios snios.spr \
 		-bdos cobdos.spr \
 		-bios cobios.spr
+
+ship:
+	rsync -Wuv cpnos.sys ../../bin

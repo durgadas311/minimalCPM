@@ -50,7 +50,10 @@ mincpm.tgz: __FRC__
 		sim/*.java
 
 ship:
-	rsync -Wuv VirtualMinCpm.jar ../bin
+	rsync -Wuv \
+		VirtualMinCpm.jar \
+		~/git/heathkit/h89/v89/CpnetSerialServer.jar \
+		../bin
 
 mincpm-s.rom: mincpm.rom ../cpnos/rmac/cpnos.sys
 	cat $^ >$@
