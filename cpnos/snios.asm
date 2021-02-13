@@ -51,21 +51,21 @@ Network$status:
 	db	0		; network status byte
 	db	0ffh		; slave processor ID number
 	dw	0080h		; A:=A:[0]
-	dw	0081h		; B:=B:[0]
-	dw	0082h		; C:=C:[0]
-	dw	0083h		; D:=D:[0]
-	dw	0084h		; E:=E:[0]
-	dw	0085h		; F:=F:[0]
-	dw	0086h		; G:=G:[0]
-	dw	0087h		; H:=H:[0]
-	dw	0088h		; I:=I:[0]
-	dw	0089h		; J:=J:[0]
-	dw	008ah		; K:=K:[0]
-	dw	008bh		; L:=L:[0]
-	dw	008ch		; M:=M:[0]
-	dw	008dh		; N:=N:[0]
-	dw	008eh		; O:=O:[0]
-	dw	008fh		; P:=P:[0]
+	dw	0		; B:  Disk device
+	dw	0		; C:   "
+	dw	0		; D:   "
+	dw	0		; E:   "
+	dw	0		; F:   "
+	dw	0		; G:   "
+	dw	0		; H:   "
+	dw	0		; I:   "
+	dw	0		; J:   "
+	dw	0		; K:   "
+	dw	0		; L:   "
+	dw	0		; M:   "
+	dw	0		; N:   "
+	dw	0		; O:   "
+	dw	0		; P:   "
 
 	dw	0080h		; CON:=CON:[0]
 
