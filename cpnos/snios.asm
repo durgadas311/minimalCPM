@@ -231,8 +231,8 @@ Msg$out$loop:
 
 ;	Network Initialization
 NTWKIN:
-	call	check	; also init if needed
-	jc	initerr
+;	call	check	; also init if needed
+;	jc	initerr
 	; Send "BDOS Func 255" message to other end,
 	; Response will tell us our, and their, node ID
 	lxix	msgbuf

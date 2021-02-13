@@ -30,6 +30,12 @@ buff	equ	0080h	;default buffer
 
 	maclib z180
 
+; Z180 MMU ports
+itc	equ	34h
+mmu$cbr	equ	38h
+mmu$bbr	equ	39h
+mmu$cbar equ	3ah
+
 ; Z180 ASCI0 ports
 ctla	equ	00h	
 ctlb	equ	02h	
@@ -92,6 +98,10 @@ boot:	;print signon message and go to NDOS
 ;
 ;	device initialization  -  as required
 ;
+	; set MMU for all-memory (org0)
+	mvi	a,1111$0000b	; ca at 0xF000, ba at 0x0000
+	out0	a,mmu$cbar
+	;
 	lxi	sp,buff+0080h
 ; can't print message here - need NDOS/SNIOS
 ;	lxi	h,signon

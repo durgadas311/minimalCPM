@@ -52,4 +52,7 @@ mincpm.tgz: __FRC__
 ship:
 	rsync -Wuv VirtualMinCpm.jar ../bin
 
+mincpm-s.rom: mincpm.rom ../cpnos/rmac/cpnos.sys
+	cat $^ >$@
+
 __FRC__:
