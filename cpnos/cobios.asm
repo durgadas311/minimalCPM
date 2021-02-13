@@ -66,11 +66,11 @@ bdose	equ	bdos$pg+6
 ;	jump vector for indiviual routines
 ; Cold boot arrives here first...
 cboote:	jmp	boot
-wboote:	jmp	error
-	jmp	const
-	jmp	conin
-	jmp	conout
-	jmp	list
+wboote:	jmp	error	; get's intercepted by NDOS
+	jmp	const	; replaced by NDOS routine...
+	jmp	conin	; replaced by NDOS routine...
+bco:	jmp	conout	; replaced by NDOS routine...
+	jmp	list	; replaced by NDOS routine...
 	jmp	error
 	jmp	error
 	jmp	error
@@ -80,11 +80,12 @@ wboote:	jmp	error
 	jmp	error
 	jmp	error
 	jmp	error
-	jmp	listst	;list status
+	jmp	listst	; replaced by NDOS routine...
 	jmp	error
-	jmp	recvbt	; +51: first char of recv
-	jmp	recvby	; +54:
-	jmp	sendby	; +57:
+	jmp	wbhook	; +51: warm boot hook, for Z180 TRAP
+	jmp	recvbt	; +54: first char of recv
+	jmp	recvby	; +57:
+	jmp	sendby	; +60:
 
 ;
 ;signon:	;signon message: xxk cp/m vers y.y
@@ -116,6 +117,64 @@ boot:	;print signon message and go to NDOS
 	lxi	h,wboote	; for NDOS init
 	shld	0001h
 	jmp	ndoscb ;go to NDOS initialization
+
+; must not depend on stack until we clear TRAP.
+; HL=return address
+wbhook:
+	in0	a,itc
+	bit	7,a
+	jrz	jmphl	; no TRAP
+	pop	d	; TRAP address
+	dcx	d	; possible opcode start
+	bit	6,a
+	jrz	wb0
+	dcx	d
+wb0:	ani	01111111b	;
+	out0	a,itc		; reset TRAP latch
+	lxi	sp,100h		; need stack to print message...
+	push	h		; return address from NDOS
+	lxi	h,trapx
+	mov	a,d
+	call	hexout
+	mov	a,e
+	call	hexout
+	lxi	h,trap
+	; NOTE: this message may/will go over CP/NET...
+	jmp	msgout	; and return to NDOS
+jmphl:	pchl
+
+trap:	db	cr,lf,'*** TRAP '
+trapx:	db	'xxxx',cr,lf,0
+
+; puts hex digits at (HL++)
+hexout:
+	push	psw
+	rlc
+	rlc
+	rlc
+	rlc
+	call	hexdig
+	pop	psw
+hexdig:	ani	0fh
+	adi	90h
+	daa
+	aci	40h
+	daa
+	mov	m,a
+	inx	h
+	ret
+
+; print message at HL until NUL
+msgout:	mov	a,m
+	ora	a
+	rz
+	inx	h
+	mov	c,a
+	push	h
+	call	bco
+	pop	h
+	jr	msgout
+
 ;
 ;
 

@@ -91,6 +91,7 @@ BDOSE	equ	bdos$pg+6
 ;  BIOS ROUTINES
 ;
 ;wbootf	equ	bios$pg+3
+wbhook	equ	bios$pg+51
 
 ;
 ;  SNIOS ROUTINES
@@ -159,7 +160,7 @@ DMAADD:	dw	SYSDMA
 CURUSR: db	0
 
 TLBIOS: dw	0
-	dw	NWBOOT
+	dw	NWBOOT0 ; special hook for possible TRAP
 	dw	NCONST
 	dw	NCONIN
 	dw	NCONOT
@@ -580,6 +581,9 @@ CHKDS1:
 	sta	MSGID
 	ret
 
+NWBOOT0:	; possible CPU TRAP... can't use stack
+	lxi	h,NWBOOT	; "return" address
+	jmp	wbhook		; divert to BIOS handler
 NWBOOT:
 	lxi	sp,TPA
 	lxi	h,NDOS

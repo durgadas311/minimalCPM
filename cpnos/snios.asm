@@ -31,9 +31,9 @@ always$retry	equ	0	; disabled
 base	equ	$	; for external references
 bios$pg	equ	base+0ff00h	; start of bios
 ; BIOS extentions for CP/NET char I/O:
-recvbt	equ	bios$pg+51	; long timeout (first char)
-recvby	equ	bios$pg+54	; short timeout
-sendby	equ	bios$pg+57	; direct console out
+recvbt	equ	bios$pg+54	; long timeout (first char)
+recvby	equ	bios$pg+57	; short timeout
+sendby	equ	bios$pg+60	; direct console out
 
 ;	Jump vector for SNIOS entry points
 	jmp	NTWKIN	; network initialization
