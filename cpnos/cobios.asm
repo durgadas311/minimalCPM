@@ -166,8 +166,10 @@ sendby:
 
 ; Return: CY=timeout else A=char
 ; At 115200, one char is 1600 cycles...
-; Destroys BC, D
+; Destroys BC, D - must preserve!
 recvbt:
+	push	d
+	push	b
 	mvi	d,20	; 20x = 3.1 seconds
 coni0:	; loop = 156mS
 	lxi	b,0		; 65536 * 44 = 2883584
@@ -181,14 +183,20 @@ coni1:
 	jrnz	coni1		;  8 (t) = 44
 	dcr	d
 	jrnz	coni0
+	pop	b
+	pop	d
 	stc
 	ret
 coni2:	in0	a,rdr	; CY=0 from ANI
+	pop	b
+	pop	d
 	ret
 
 ; For CP/NET, wait short timeout for next char
-; Destroys BC, D
+; Destroys BC, D - must preserve!
 recvby:
+	push	d
+	push	b
 	mvi	d,2	; 2x = 312mS for next char
 	jr	coni0
 

@@ -1,0 +1,7 @@
+*.prn
+*.rel
+*.spr
+*.sym
+*.sys
+*.asm
+*.lib
