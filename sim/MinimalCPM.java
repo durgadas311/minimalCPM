@@ -167,16 +167,20 @@ public class MinimalCPM implements Computer, Runnable {
 				}
 				if (trace) {
 					++traced;
+					int ppc = cpu.phyAddr(PC);
+					int SP = cpu.getRegSP();
+					int psp = cpu.phyAddr(SP);
 					traceStr = String.format("{%05d} %04x: %02x %02x %02x %02x " +
-						": %02x %04x %04x %04x [%04x]",
+						": %02x %04x %04x %04x [%04x] %02x%02x",
 						clock & 0xffff,
-						PC, mem.read(PC), mem.read(PC + 1),
-						mem.read(PC + 2), mem.read(PC + 3),
+						PC, mem.read(ppc), mem.read(ppc + 1),
+						mem.read(ppc + 2), mem.read(ppc + 3),
 						cpu.getRegA(),
 						cpu.getRegBC(),
 						cpu.getRegDE(),
 						cpu.getRegHL(),
-						cpu.getRegSP());
+						cpu.getRegSP(),
+						mem.read(psp + 1), mem.read(psp));
 				}
 				clk = cpu.execute();
 				if (clk < 0) {
