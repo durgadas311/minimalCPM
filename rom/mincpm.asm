@@ -224,6 +224,16 @@ conin:	in0	a,stat
 	ani	07fh
 	ret
 
+; Get char from console, toupper and echo
+conine:
+	call	conin
+	call	toupper
+	push	psw
+	mov	c,a
+	call	conout
+	pop	psw
+	ret
+
 ; For CP/NET boot, wait long timeout for one char
 ; Return: CY=timeout else A=char
 ; At 115200, one char is 1600 cycles...
@@ -496,7 +506,7 @@ sb1:	call	crlf	;start on new line
 	call	hexout	;and display it
 	call	space	;delimit it from user's (posible) entry
 	mvi	b,0	;zero accumilator for user's entry
-sb2:	call	conin	;get user's first character
+sb2:	call	conine	;get user's first character
 	cpi	CR	;if CR then skip to next byte
 	jrz	foward
 	cpi	' '	;or if Space then skip to next
@@ -516,7 +526,7 @@ sb3:	slar	b	;roll accumilator to receive new digit
 	slar	b
 	ora	b	;merge in new digit
 	mov	b,a
-sb4:	call	conin	;get next character
+sb4:	call	conine	;get next character
 	cpi	CR	;if CR then put existing byte into memory
 	jrz	putbyte ;  and step to next.
 	cpi	'.'
@@ -556,7 +566,7 @@ Gcomnd: 		;jump to address given by user
 	call	space
 	mvi	c,'?'
 	call	conout
-	call	conin	;wait for user to type "Y" to
+	call	conine	;wait for user to type "Y" to
 	cpi	'Y'	;indicate that we should jump.
 	rnz		;abort if response was not "Y"
 	xchg
@@ -616,6 +626,7 @@ Vcomnd:
 ; future: network boot using optional string.
 ; TODO: support both? requires extra syntax.
 Bcomnd:	; for now, no options, entire image in memory (ROM)
+	call	crlf
 	; but, need to reveal image using mmu$bbr.
 	; slide window up to 32K boundary
 	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
