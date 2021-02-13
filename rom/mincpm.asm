@@ -12,6 +12,9 @@ VERN	equ	003h	; ROM version
 false	equ	0
 true	equ	not false
 
+; Is boot image appended to ROM?
+inline$boot	equ	true
+
 	$*macro
 
 CR	equ	13
@@ -357,7 +360,11 @@ ncmnds	equ	($-comnds)/3
 *********************************************************
 
 menu:
-	db	CR,LF,'B [string] - boot'
+if inline$boot
+	db	CR,LF,'B - inline boot'
+else
+	db	CR,LF,'B [string] - network boot'
+endif
 	db	CR,LF,'D <start> <end> - display memory in HEX'
 	db	CR,LF,'S <start> - set/view memory'
 	db	CR,LF,'G <start> - go to address'
@@ -625,8 +632,10 @@ Vcomnd:
 ; currently, boot image is at 'cpnos'.
 ; future: network boot using optional string.
 ; TODO: support both? requires extra syntax.
-Bcomnd:	; for now, no options, entire image in memory (ROM)
+Bcomnd:
 	call	crlf
+if inline$boot
+	; for now, no options, entire image in memory (ROM).
 	; but, need to reveal image using mmu$bbr.
 	; slide window up to 32K boundary
 	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
@@ -682,6 +691,10 @@ boot2:	; TODO: if we loaded nothing, DON'T JUMP
 	; CP/NOS BIOS will reset mmu$cbar
 	lhld	cpnos+entry
 	pchl
+else
+	// TODO: implement network boot
+	ret
+endif
 
 *********************************************************
 **  Utility subroutines
