@@ -86,6 +86,7 @@ bco:	jmp	conout	; replaced by NDOS routine...
 	jmp	recvbt	; +54: first char of recv
 	jmp	recvby	; +57:
 	jmp	sendby	; +60:
+	jmp	putfifo	; +63: put char to fifo
 
 ;
 ;signon:	;signon message: xxk cp/m vers y.y
@@ -178,19 +179,65 @@ msgout:	mov	a,m
 ;
 ;
 
-; should never get called - network only devices
-const:	;console status to reg-a
-	in0	a,stat
-	ani	10000000b	; RDRF
-	rz	; not ready
+fifo:	db	0,0,0,0,0,0,0,0
+wfifo:	dw	fifo	; fifo write ptr
+rfifo:	dw	fifo	; fifo read ptr
+
+putfifo:
+	push	h
+	push	d
+	lhld	wfifo
+	mov	m,a
+	inx	h
+	mov	a,l
+	lxi	d,fifo+8
+	cmp	e
+	jrnz	pf0
+	lxi	h,fifo
+pf0:	shld	wfifo
+	pop	d
+	pop	h
+	ret
+
+getfifo:
+	lhld	rfifo
+	mov	a,m
+	inx	h
+	push	psw
+	mov	a,l
+	lxi	d,fifo+8
+	cmp	e
+	jrnz	gf0
+	lxi	h,fifo
+gf0:	shld	rfifo
+	pop	psw
+	ret
+
+chkfifo:
+	lda	rfifo
+	mov	c,a
+	lda	wfifo
+	sub	c
+	rz	; nothing ready
 	ori	0ffh
+	ret
+
+conclr:	in0	a,stat
+	ani	10000000b	; RDRF
+	rz	; nothing left
+	in0	a,rdr
+	call	putfifo
+	jr	conclr
+
+const:	;console status to reg-a
+	call	conclr
+	call	chkfifo
 	ret
 ;
 conin:	;console character to reg-a
-	in0	a,stat
-	ani	10000000b	; RDRF
+	call	const
 	jrz	conin
-	in0	a,rdr
+	call	getfifo
 	ret
 ;
 conout:	;console character from c to console out
@@ -241,6 +288,7 @@ sendby:
 ; Return: CY=timeout else A=char
 ; At 115200, one char is 1600 cycles...
 ; Destroys BC, D - must preserve!
+; char never comes from fifo
 recvbt:
 	push	d
 	push	b

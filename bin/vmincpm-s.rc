@@ -6,6 +6,8 @@ ram_size = 64k
 rom_size = 32k
 # This ROM is mincpm.rom and cpnos.sys concatinated
 monitor_rom = mincpm-s.rom
+#Enable simple debugging commands on stdin
+#debugger
 
 # BEWARE: tracing tends to cause server timeouts.
 # This traces the first 1000 CPU cycles (worth of instructions)
@@ -18,8 +20,9 @@ monitor_rom = mincpm-s.rom
 asci0_att = ProgramSerial serialserver conf=vmincpm-s.rc log=client-s.log
 # These are CpnetSerialServer.jar properties:
 cpnet_console = TelnetSerial 192.168.1.17 31123 modem
+cpnet_console_oob
 cpnet_tty = stdio
-cpnet_cid = c8
+cpnet_cid = f0
 cpnet_server00 = HostFileBdos /path/to/MinCPM
 cpnet_protocol = dri
 #cpnet_debug = 1

@@ -34,6 +34,7 @@ bios$pg	equ	base+0ff00h	; start of bios
 recvbt	equ	bios$pg+54	; long timeout (first char)
 recvby	equ	bios$pg+57	; short timeout
 sendby	equ	bios$pg+60	; direct console out
+putcon	equ	bios$pg+63	; add char to conin fifo
 
 ;	Jump vector for SNIOS entry points
 	jmp	NTWKIN	; network initialization
@@ -67,7 +68,7 @@ Network$status:
 	dw	0		; O:   "
 	dw	0		; P:   "
 
-	dw	0080h		; CON:=CON:[0]
+	dw	0		; Console local, OOB
 
 	dw	0080h		; LST:=LST:[0]
 	db	0		;	buffer index
@@ -294,15 +295,14 @@ send:
 	lhld	msg$adr
 	mvi	a,cENQ
 	call	sendby		; send ENQ to master
-	mvi	d,timeout$retries
 ENQ$response:
-	call	recvby
+	call	gobble
 	jnc	got$ENQ$response
-	dcr	d
-	jnz	ENQ$response
+	lxi	h,retry$count
+	dcr	m
+	jnz	send		; send again unless max retries
 	jmp	Char$in$timeout
 got$ENQ$response:
-	call	get$ACK0
 	mvi	c,cSOH
 	mvi	e,5
 	call	Msg$out		; send SOH FMT DID SID FNC SIZ
@@ -328,10 +328,19 @@ got$ENQ$response:
 	call	get$ACK		; (leave these
 	ret			;              two instructions)
 
+; keep getting chars until ACK or timeout
+gobble:
+	call	recvby
+	rc
+	ani	7fh
+	cpi	cACK
+	rz
+	call	putcon	; must be console input?
+	jmp	gobble
+
 get$ACK:
 	call	recvby
 	jc	send$retry 	; jump if timeout
-get$ACK0:
 	ani	7fh
 	sui	cACK
 	rz
