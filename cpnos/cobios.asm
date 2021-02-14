@@ -180,18 +180,33 @@ msgout:	mov	a,m
 
 ; should never get called - network only devices
 const:	;console status to reg-a
-	xra	a
+	in0	a,stat
+	ani	10000000b	; RDRF
+	rz	; not ready
+	ori	0ffh
 	ret
 ;
 conin:	;console character to reg-a
-	xra	a
+	in0	a,stat
+	ani	10000000b	; RDRF
+	jrz	conin
+	in0	a,rdr
 	ret
 ;
 conout:	;console character from c to console out
-	ret
+	mov	a,c
+	jr	sendby
 ;
 conost:
-	mvi	a,0ffh
+	in0	a,ctlb
+	ani	00100000b	; /CTS
+	jrnz	cono0
+	in0	a,stat
+	ani	00000010b	; TDRE
+	rz	; not ready
+	ori	0ffh
+	ret
+cono0:	xra	a
 	ret
 ;
 list:	;list device out
@@ -210,7 +225,7 @@ error:
 ; For CP/NET...
 ;
 ; Output char to console
-; C=char
+; A=char
 sendby:
 	push	psw
 	in0	a,ctlb
