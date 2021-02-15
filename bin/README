@@ -1,0 +1,60 @@
+How to setup a demo using the simulator
+
+These instructions are oriented for Linux/Unix(MAC OSX) systems.
+For Windows, some of these steps need to change. The following files
+need to be customized:
+
+1. == ROM ==
+1.1	Build a ROM image by concatenating "mincpm.rom" and
+	"cpnos.sys". For example, on Linux/Unix, the command
+	"cat mincpm.rom cpnos.sys >mincpm-s.rom" will accomplish that.
+ 
+2. == vmincpm-s.rc ==
+2.1	Change 'cpnet_server00' "/path/to/MinCPM" to reflect the full path
+	to where you want your CP/NET server 00 drives.  After creating
+	this top-level directory, create subdirectories there name 'a'
+	through 'p'.
+
+2.2	Change the host/IP and port for 'cpnet_console' (TelnetSerial)
+	to reflect your local IP address and a free port number.
+
+2.3	Change 'monitor_rom' to reflect the name of the ROM image created
+	in 1.1 (if different).
+
+2.4	Optionally un-comment the 'debugger' property. This enables
+	some simple debugging commands on the simulator. See DEBUGGER
+	for more information.
+
+2.5	Optionally un-comment the 'log' property, and set the desired
+	log file name. Normally, the simulator output is fairly limited
+	but when using the 'debugger' it is desirable to have the output
+	saved to a file.
+
+3. == serialserver ==
+3.1	Modify the shell variable "JAR1" to reference the actual path to
+	the file CpnetSerialServer.jar.
+
+3.2	Modify the shell variable "JAR2" to reference the actual path to
+	the downloaded file jSerialComm-2.6.2.jar.
+
+4. == /path/to/MinCPM ==
+4.1	Populate the chosen path for drive A: (e.g. /path/to/MinCPM/a)
+	with CP/NET and CP/M 2.2 utilities. The minimum required are
+	the files in the 'dist' subdirectory of this repository.
+	Additionally, CP/M 2.2 programs may be useful, such as
+	"stat.com", "ddt.com", etc.
+
+To run the simulation, use the command:
+
+	java -jar VirtualMinCpm.jar vmincpm-s.rc
+
+To connect to the console, run "telnet 192.168.1.17 31123"
+(substituting the host/IP and port chosen in step 2.2), or
+an equivalent program, to connect. Note, telnet is not strictly
+required - any TCP/IP socket connection should work.
+Note that telnet needs to be running in "character" mode
+in order to function properly. Use the "mode character" command
+after starting, or else setup an entry in your .telnetrc file like:
+
+	192.168.1.17
+		mode character

@@ -1,0 +1,43 @@
+Simulator Debugger Commands
+
+The simulator debugger, selected by the property 'debugger',
+uses the terminal stdin to enter commands. This is the same
+terminal/window where the 'java' command was entered.
+
+Commands:
+
+reset	Causes the virtual system to be reset. This is virtually
+	the same as a hardware RESET.
+
+quit	Exit the simulation. Typically, a ^C will have the same effect.
+
+dump cpu
+	Print information about the current CPU state.
+
+dump page XX
+	Dump memory page XX, in the context of the current system
+	state. This is a "virtual" or logical CPU page address in the
+	64K address space.
+	(future: add capability to dump by physical addresses)
+
+dump core <file>
+	Dump all of memory to the specified file. The dump will be
+	sparse, with the memory chunks physically residing at their
+	physical addresses. The ROM will begin at byte 0x00000 of the
+	file, and RAM will begin at byt 0x80000 of the file.
+
+trace off
+	Turn off, stop, disable, any previously set tracing.
+
+trace on
+	Start tracing all instructions. Beware! This can consume the
+	output very quickly.
+
+trace cycles N
+	Trace the next N CPU clock cycles. Note, this is not the number of
+	instructions. Typically, numbers between 100 and 1000 are useful.
+
+trace pc SSSS EEEE
+	Trace all instructions executed between logical addresses SSSS
+	(inclusive) and EEEE (exclusive).  Be aware that this can also
+	produce a lot of output under the right conditions.
