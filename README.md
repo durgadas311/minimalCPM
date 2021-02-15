@@ -26,3 +26,6 @@ Subdirectories are organized as follows:
 
 **cpnos:**
 -   CP/NET code.
+
+**dist**
+-   CP/NET utilities and files needed to run CP/NOS.
