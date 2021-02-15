@@ -1,13 +1,16 @@
 // Copyright (c) 2021 Douglas Miller <durgadas311@gmail.com>
 
 import java.util.Properties;
+import java.io.*;
 
 public class RAM implements Memory {
 	private byte[] mem;
 	private int msk;
 	static final int dflt = 64 * 1024;
+	int paddr;
 
-	public RAM(Properties props) {
+	public RAM(Properties props, int paddr) {
+		this.paddr = paddr;
 		String s = props.getProperty("ram_size");
 		int len = getSize(s);
 		mem = new byte[len];
@@ -57,6 +60,13 @@ public class RAM implements Memory {
 	public void reset() { }
 
 	public void dumpCore(String file) {
-		// TODO:
+		try {
+			RandomAccessFile core = new RandomAccessFile(file, "rw");
+			core.seek(paddr);
+			core.write(mem);
+			core.close();
+		} catch (Exception ee) {
+			ee.printStackTrace();
+		}
 	}
 }

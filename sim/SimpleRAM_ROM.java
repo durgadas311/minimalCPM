@@ -7,8 +7,8 @@ public class SimpleRAM_ROM implements Memory {
 	private Memory rom;
 
 	public SimpleRAM_ROM(Properties props) {
-		mem = new RAM(props);
-		rom = new ROM(props);
+		mem = new RAM(props, 0x80000);
+		rom = new ROM(props, 0x00000);
 	}
 
 	public int read(boolean ro, int bank, int address) {
@@ -39,6 +39,7 @@ public class SimpleRAM_ROM implements Memory {
 	}
 
 	public void dumpCore(String file) {
-		// TODO:
+		rom.dumpCore(file);
+		mem.dumpCore(file);
 	}
 }

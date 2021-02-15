@@ -7,8 +7,10 @@ public class ROM implements Memory {
 	private byte[] mem;
 	private int msk;
 	static final int dflt = 8 * 1024;
+	int paddr;
 
-	public ROM(Properties props) {
+	public ROM(Properties props, int paddr) {
+		this.paddr = paddr;
 		String s = props.getProperty("rom_size");
 		int len = getSize(s);
 		mem = new byte[len];
@@ -90,5 +92,13 @@ public class ROM implements Memory {
 	public void reset() { }
 
 	public void dumpCore(String file) {
+		try {
+			RandomAccessFile core = new RandomAccessFile(file, "rw");
+			core.seek(paddr);
+			core.write(mem);
+			core.close();
+		} catch (Exception ee) {
+			ee.printStackTrace();
+		}
 	}
 }

@@ -1,5 +1,6 @@
 // Copyright 2021 Douglas Miller <durgadas311@gmail.com>
 
+import java.util.Arrays;
 import java.util.Vector;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
@@ -11,7 +12,7 @@ import z80core.*;
 // TODO: Make hardware configurable...
 // No I/O (outside Z180), no interrupts, ...
 // A19 selects RAM/ROM...
-public class MinimalCPM implements Computer, Runnable {
+public class MinimalCPM implements Computer, Commander, Runnable {
 	private Z180 cpu;
 	private long clock;
 	private Memory mem;
@@ -29,6 +30,7 @@ public class MinimalCPM implements Computer, Runnable {
 	private int cpuCycle2ms = 36864;
 	private int nanoSecCycle = 54;	// 54.25347222...
 	private Z80Disassembler disas;
+	private StdioDebugger dbg;
 	private ReentrantLock cpuLock;
 
 	private long backlogNs;
@@ -67,11 +69,16 @@ public class MinimalCPM implements Computer, Runnable {
 
 		s = props.getProperty("trace");
 		if (s != null) {
+			// Early trace option
 			Vector<String> ret = new Vector<String>();
-			traceCommand(s.split("\\s"), ret);
+			traceCommand(s.split("\\s"), ret, ret);
 			if (ret.size() > 0) {
 				System.err.format("%s\n", join(ret));
 			}
+		}
+		s = props.getProperty("debugger");
+		if (s != null) {
+			dbg = new StdioDebugger(props, this);
 		}
 	}
 
@@ -99,6 +106,13 @@ public class MinimalCPM implements Computer, Runnable {
 		} catch (Exception ee) {}
 	}
 
+	private void reset() {
+		cpu.reset();
+		mem.reset();
+		asci.reset();
+		// anything else needs reset?
+	}
+
 	private void addTicks(int ticks) {
 		clock += ticks;
 		for (ClockListener lstn : clks) {
@@ -107,6 +121,64 @@ public class MinimalCPM implements Computer, Runnable {
 		int t = ticks * nanoSecCycle;
 		for (TimeListener lstn : times) {
 			lstn.addTime(t);
+		}
+	}
+
+	////////////////////////////////
+	/// Commander implementation ///
+	public Vector<String> sendCommand(String cmd) {
+		String[] args = cmd.split("\\s");
+		Vector<String> ret = new Vector<String>();
+		ret.add("ok");
+		Vector<String> err = new Vector<String>();
+		err.add("error");
+		if (args.length < 1) {
+			return ret;
+		}
+		if (args[0].equalsIgnoreCase("quit")) {
+			// Release CPU, if held...
+			stop();
+			System.exit(0);
+		}
+		if (args[0].equalsIgnoreCase("trace") && args.length > 1) {
+			if (!traceCommand(args, err, ret)) {
+				return err;
+			}
+			return ret;
+		}
+		try {
+			cpuLock.lock(); // might wait for CPU to finish 1mS
+			if (args[0].equalsIgnoreCase("reset")) {
+				reset();
+				return ret;
+			}
+			if (args[0].equalsIgnoreCase("dump") && args.length > 1) {
+				if (args[1].equalsIgnoreCase("core") && args.length > 2) {
+					mem.dumpCore(args[2]);
+				}
+				if (args[1].equalsIgnoreCase("cpu")) {
+					ret.add(cpu.dumpDebug());
+					ret.add(disas.disas(cpu.getRegPC()) + "\n");
+				}
+				if (args[1].equalsIgnoreCase("page") && args.length > 2) {
+					String s = dumpPage(args);
+					if (s == null) {
+						err.add("syntax");
+						err.addAll(Arrays.asList(args));
+						return err;
+					}
+					ret.add(s);
+				}
+				if (args[1].equalsIgnoreCase("mach")) {
+					ret.add(dumpDebug());
+				}
+				return ret;
+			}
+			err.add("badcmd");
+			err.add(cmd);
+			return err;
+		} finally {
+			cpuLock.unlock();
 		}
 	}
 
@@ -232,7 +304,7 @@ public class MinimalCPM implements Computer, Runnable {
 		tracing = false;
 	}
 
-	private boolean traceCommand(String[] args, Vector<String> err) {
+	private boolean traceCommand(String[] args, Vector<String> err, Vector<String> ret) {
 		// TODO: do some level of mutexing?
 		if (args[1].equalsIgnoreCase("on")) {
 			startTracing(0);
@@ -286,5 +358,44 @@ public class MinimalCPM implements Computer, Runnable {
 			s += ' ' + vec.get(i);
 		}
 		return s;
+	}
+
+	// "dump page xxxx..."
+	private String dumpPage(String[] args) {
+		String str = "";
+		int pg = 0;
+		int bnk = 0;
+		int i = 2;
+		// TODO: allow physical addresses...
+		try {
+			pg = Integer.valueOf(args[i++], 16);
+		} catch (Exception ee) {
+			return ee.getMessage();
+		}
+		// these are paddrs
+		int adr = cpu.phyAddr(pg << 8);
+		int end = adr + 0x0100;
+		while (adr < end) {
+			str += String.format("%05x:", adr);
+			for (int x = 0; x < 16; ++x) {
+				str += String.format(" %02x", mem.read(adr + x));
+			}
+			str += "  ";
+			for (int x = 0; x < 16; ++x) {
+				int c = mem.read(adr + x);
+				if (c < ' ' || c > '~') {
+					c = '.';
+				}
+				str += String.format("%c", (char)c);
+			}
+			str += '\n';
+			adr += 16;
+		}
+		return str;
+	}
+
+	public String dumpDebug() {
+		// TODO: what to dump?
+		return "";
 	}
 }
