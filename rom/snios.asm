@@ -19,85 +19,19 @@
 ASCII	equ	0	; use binary protocol
 
 ;//////////////////////////////////////////////////////
-
-BDOS	equ	0005h
-
-	maclib	z180
-
-	CSEG
-	org	0
-base	equ	$	; for external references
-bios$pg	equ	base+0ff00h	; start of bios
-; BIOS extentions for CP/NET char I/O:
-recvbt	equ	bios$pg+54	; long timeout (first char)
-recvby	equ	bios$pg+57	; short timeout
-sendby	equ	bios$pg+60	; direct console out
-putcon	equ	bios$pg+63	; add char to conin fifo
-
-;	Jump vector for SNIOS entry points
-	jmp	NTWKIN	; network initialization
-	jmp	NTWKST	; network status
-	jmp	CNFTBL	; return config table addr
-	jmp	SNDMSG 	; send message on network
-	jmp	RCVMSG	; receive message from network
-	jmp	NTWKER	; network error
-	jmp	NTWKBT	; network warm boot
-	jmp	NTWKDN	; network shutdown - extension
-
-; Initial Slave Configuration Table - must be first in module
-CFGTBL:
-Network$status:
-	db	0		; network status byte
-	db	0ffh		; slave processor ID number
-	; Initial mappings made by 'mknetboot'
-	dw	0		; A:  Disk device
-	dw	0		; B:   "
-	dw	0		; C:   "
-	dw	0		; D:   "
-	dw	0		; E:   "
-	dw	0		; F:   "
-	dw	0		; G:   "
-	dw	0		; H:   "
-	dw	0		; I:   "
-	dw	0		; J:   "
-	dw	0		; K:   "
-	dw	0		; L:   "
-	dw	0		; M:   "
-	dw	0		; N:   "
-	dw	0		; O:   "
-	dw	0		; P:   "
-
-	dw	0		; Console local, OOB
-
-	dw	0		; LST: device
-	db	0		;	buffer index
-	db	0		;	FMT
-	db	0		;	DID
-	db	0ffh		;	SID (CP/NOS must still initialize)
-	db	5		;	FNC
-	db	0		;	SIZ
-	db	0		;	MSG(0)  List number
-msgbuf:	; temp message, do not disturb LST: header
-	ds	128		;	MSG(1) ... MSG(128)
-
-msg$adr:
-	ds	2		; message address
-retry$count:
-	ds	1
-
-;FirstPass:
-;	db	0ffh
-
-;wboot$msg:			; data for warm boot routine
-;	db	'<Warm Boot>'
-;	db	'$'
-
-;networkerrmsg:
-;	db	'Network Error'
-;	db	'$'
-
-
-print	equ	9		; print string function
+; Stripped-down for use as boot code in ROM...
+; Included from main ROM code.
+; ROM must define routines:
+;	recvbt
+;	recvby
+;	sendby
+;	putcon
+; RAM must provide:
+;	CFGTBL*
+;	network$status	ds	1
+;	retry$count	ds	1
+;	msg$adr		ds	2
+;	msgbuf		ds	5+256
 ;//////////////////////////////////////////////////////
 
 max$retries	equ	10

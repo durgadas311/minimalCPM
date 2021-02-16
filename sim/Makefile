@@ -55,7 +55,7 @@ ship:
 		~/git/heathkit/h89/v89/CpnetSerialServer.jar \
 		../bin
 
-mincpm-s.rom: mincpm.rom ../cpnos/rmac/cpnos.sys
+mincpm-s.rom: mincpm.rom ../bin/cpnos.sys
 	cat $^ >$@
 
 __FRC__:

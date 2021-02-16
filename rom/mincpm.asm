@@ -1,5 +1,5 @@
 ; ROM monitor/boot for Minimal CP/M System
-VERN	equ	004h	; ROM version
+VERN	equ	005h	; ROM version
 
 ; Memory map:
 ; 0 0000    ROM start
@@ -13,7 +13,7 @@ false	equ	0
 true	equ	not false
 
 ; Is boot image appended to ROM?
-inline$boot	equ	true
+inline$boot	equ	false
 
 	$*macro
 
@@ -57,8 +57,27 @@ asxt	equ	12h
 savstk:	ds	2
 addr0:	ds	2
 addr1:	ds	2
-sid:	ds	1
 line:	ds	64
+if NOT inline$boot
+boot$server	ds	1
+retry$count:	ds	1
+msg$adr:	ds	2
+dma:		ds	2
+CFGTBL		ds	0	; mimic CP/NET CFGTBL
+network$status:	ds	1
+client$id	ds	1
+		ds	36	; not used
+		ds	1	; not used
+msgbuf:		ds	5+256
+
+; offsets in msgbuf
+FMT	equ	0
+DID	equ	1
+SID	equ	2
+FNC	equ	3
+SIZ	equ	4
+DAT	equ	5
+endif
 
 stack	equ	00000h	; stack at top of memory (wrapped)
 
@@ -68,9 +87,9 @@ comlen	equ	1	; common length
 bnktop	equ	2	; banked top (not used)
 bnklen	equ	3	; banked length (00)
 entry	equ	4	; entry point of OS
-cfgtbl	equ	6	; CP/NET cfgtbl
+cfgtab	equ	6	; CP/NET cfgtbl
 org0	equ	16	; not used(?)
-load	equ	128	; load map/message ('$' terminated)
+ldmsg	equ	128	; load map/message ('$' terminated)
 recs	equ	256	; records to load, top-down
 
 ; Start of ROM code
@@ -116,7 +135,7 @@ swtrap:	; try to recover return address...
 	lspd	savstk
 	push	d	; not needed?
 	lxi	h,swt
-	call	msgout
+	call	msgprt
 	pop	d
 	call	taddr
 	call	crlf
@@ -149,7 +168,7 @@ init0:
 	call	coninit
 	call	meminit
 	lxi	h,signon
-	call	msgout
+	call	msgprt
 	; save registers on stack, for debugger access...
 	jmp	debug
 
@@ -158,6 +177,8 @@ belout:
 ; Output char to console
 ; C=char
 conout:
+	mov	a,c
+sendby:	push	psw
 conot1:
 	in0	a,ctlb
 	ani	00100000b	; /CTS
@@ -165,7 +186,8 @@ conot1:
 	in0	a,stat
 	ani	00000010b	; TDRE
 	jrz	conot1
-	out0	c,tdr
+	pop	psw
+	out0	a,tdr
 	ret
 
 ; Based on 18.432MHz CPU clock... 115200 baud...
@@ -242,7 +264,9 @@ conine:
 ; For CP/NET boot, wait long timeout for one char
 ; Return: CY=timeout else A=char
 ; At 115200, one char is 1600 cycles...
-conin0:
+recvbt:
+	push	d
+	push	b
 	mvi	d,20	; 20x = 3.1 seconds
 coni0:	; loop = 156mS
 	lxi	b,0		; 65536 * 44 = 2883584
@@ -256,15 +280,25 @@ coni1:
 	jrnz	coni1		;  8 (t) = 44
 	dcr	d
 	jrnz	coni0
+	pop	b
+	pop	d
 	stc
 	ret
 coni2:	in0	a,rdr	; CY=0 from ANI
+	pop	b
+	pop	d
 	ret
 
 ; For CP/NET boot, wait short timeout for next char
-conin1:
+recvby:
+	push	d
+	push	b
 	mvi	d,2	; 2x = 312mS for next char
 	jr	coni0
+
+; Save stray conin characters...
+putcon:	; not used in ROM, just discard...
+	ret
 
 ; TODO: preserve CPU regs for debug
 trap:
@@ -286,7 +320,7 @@ trap0:
 	ani	01111111b	; reset TRAP
 	out0	a,itc
 	lxi	h,trpms
-	call	msgout
+	call	msgprt
 	pop	d
 	call	taddr
 	call	crlf
@@ -309,7 +343,7 @@ cilp:	lspd	savstk
 	lxi	h,cilp		;setup return address
 	push	h
 	lxi	h,prompt	;prompt for a command
-	call	msgout
+	call	msgprt
 	call	linein		;wait for command line to be entered
 	lxi	d,line
 	call	char		;get first character
@@ -323,7 +357,7 @@ cci0:	cmp	m		;search command table
 	inx	h
 	djnz	cci0		;loop untill all valid commands are checked
 error	lxi	h,errm		;if command unknown, beep and re-prompt
-	jmp	msgout
+	jmp	msgprt
 
 gotocmd:
 	push	d		;save command line buffer pointer
@@ -334,6 +368,7 @@ gotocmd:
 	pop	d		;restore buffer pointer
 	pchl			;jump to command routine
 
+; All commands are started with DE=next char in line buffer
 comnds:
 	db	'?'
 	dw	Qcomnd
@@ -378,7 +413,7 @@ endif
 	db	0
 
 Qcomnd:	lxi	h,menu
-	jmp	msgout
+	jmp	msgprt
 
 Mcomnd:	call	getaddr
 	jc	error
@@ -589,7 +624,7 @@ Icomnd:
 	jnz	error	;error if no address entered
 	push	h	; save port
 	lxi	h,inpms
-	call	msgout
+	call	msgprt
 	pop	h
 	push	h
 	mov	a,l
@@ -626,31 +661,33 @@ versms:	db	CR,LF,'Version ',TRM
 
 Vcomnd:
 	lxi	h,versms
-	call	msgout
+	call	msgprt
 	lxi	h,vernum
-	jmp	msgout
+	jmp	msgprt
 
 ; Boot
 ; currently, boot image is at 'cpnos'.
 ; future: network boot using optional string.
 ; TODO: support both? requires extra syntax.
 Bcomnd:
-	call	getaddr ;get port address, ignore extra MSDs
+	call	getaddr ;get server ID, ignore extra MSDs
 	jc	error	; error if invalid
 	bit	7,b	;test for no entry
 	mvi	a,0
 	jrnz	boot8	;use 00
 	mov	a,l
-boot8:	push	psw	; cannot use RAM to save this...
-	call	crlf
+boot8:
 if inline$boot
+	push	psw	; cannot use RAM to save this...
+	sta	boot$server
+	call	crlf
 	; for now, no options, entire image in memory (ROM).
 	; but, need to reveal image using mmu$bbr.
 	; slide window up to 32K boundary
 	; Must not use RAM (at 2000h) after this...
 	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
 	out0	a,mmu$cbar
-	lxi	h,cpnos+load
+	lxi	h,cpnos+ldmsg
 	call	print
 	; TODO: move stack? do this inline to avoid stack issues
 	; Once we start loading, we destroy high memory.
@@ -699,7 +736,7 @@ boot4:
 	jrnz	boot4
 boot2:	; TODO: if we loaded nothing, DON'T JUMP
 	; CP/NOS BIOS will reset mmu$cbar
-	lhld	cpnos+cfgtbl
+	lhld	cpnos+cfgtab
 	mov	a,h
 	ora	l
 	jrz	boot5
@@ -720,8 +757,95 @@ boot6:	inx	h
 boot5:	lhld	cpnos+entry
 	pchl
 else
-	// TODO: implement network boot
+	; TODO: parse optional string...
+	sta	boot$server
+	push	d	; save line pointer
+	mvi	a,0ffh	; we don't know yet...
+	sta	client$id
+	call	NTWKIN	; trashes msgbuf...
+	pop	d
+	ora	a
+	jnz	error
+
+	mvi	c,0
+	lxi	h,msgbuf+DAT
+boot1:
+	call	char
+	jrz	boot0
+	cpi	' '
+	jrz	boot1
+boot0:	mov	m,a
+	inx	h
+	inr	c
+	call	char
+	jrz	boot2
+	cpi	' '
+	jrnz	boot0
+boot2:	mvi	m,0
+	mov	a,c	; SIZ incl NUL
+	sta	msgbuf+SIZ
+	lda	boot$server
+	sta	msgbuf+DID
+	lda	client$id
+	sta	msgbuf+SID
+	mvi	a,1
+	sta	msgbuf+FNC
+loop:
+	mvi	a,0xb0
+	sta	msgbuf+FMT
+	call	netsr	; send request, receive response
+	jc	error	; network error
+	lda	msgbuf+FMT
+	cpi	0xb1
+	jnz	error	; invalid response
+	lda	msgbuf+FNC
+	ora	a
+	jz	error	; NAK
+	dcr	a
+	jrz	ldtxt
+	dcr	a
+	jrz	stdma
+	dcr	a
+	jrz	load
+	dcr	a
+	jnz	error	; unsupported function
+	; done - execute boot code
+	lhld	msgbuf+DAT
+	pchl	; jump to code...
+load:	lhld	dma
+	xchg
+	lxi	h,msgbuf+DAT
+	lxi	b,128
+	ldir
+	xchg
+	shld	dma
+netack:
+	xra	a
+	sta	msgbuf+FNC
+	sta	msgbuf+SIZ
+	jr	loop
+stdma:
+	lhld	msgbuf+DAT
+	shld	dma
+	jr	netack
+ldtxt:
+	call	crlf
+	lxi	h,msgbuf+DAT
+	call	print
+	jr	netack
+
+netsr:
+	lxi	b,msgbuf
+	call	SNDMSG
+	ora	a
+	jrnz	netsre
+	lxi	b,msgbuf
+	call	RCVMSG
+	ora	a
+	rz
+netsre:	stc
 	ret
+	
 endif
 
 *********************************************************
@@ -754,15 +878,15 @@ crlf:	mvi	c,CR	;send Carriage-Return/Line-Feed to console
 	mvi	c,LF
 	jmp	conout
 
-msgout:	mov	a,m	;send string to console, terminated by 00
+msgprt:	mov	a,m	;send string to console, terminated by 00
 	ora	a
 	rz
 	mov	c,a
 	call	conout
 	inx	h
-	jr	msgout
+	jr	msgprt
 
-print:	mov	a,m	; BDOS func 9 style msgout
+print:	mov	a,m	; BDOS func 9 style msgprt
 	cpi	'$'
 	rz
 	mov	c,a
@@ -909,6 +1033,10 @@ decot1:
 	pop	psw
 	mov	c,a
 	jmp	conout
+
+if NOT inline$boot
+	include	snios.asm
+endif
 
 	rept	2000h-$
 	db	0ffh

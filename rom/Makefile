@@ -4,7 +4,7 @@ all: mincpm.rom
 	cp $< $@
 
 zout/%.cim: %.asm
-	zmac --dri -i -8 -c -s -n $<
+	zmac --dri -8 -c -s -n $<
 
 ship:
 	rsync -Wuv mincpm.rom ../bin

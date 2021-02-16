@@ -1,0 +1,129 @@
+How to setup a demo using the simulator and network boot
+
+These instructions are oriented for Linux/Unix(MAC OSX) systems.
+For Windows, some of these steps need to change. The following files
+need to be customized. However, the boot method must be chosen:
+
+For the "network boot" option the CP/NOS image(s) reside on the server.
+ 
+2. == vmincpm-nb.rc ==
+2.1	Change 'cpnet_server00' "/path/to/MinCPM" to reflect the full path
+	to where you want your CP/NET server 00 drives.  After creating
+	this top-level directory, create subdirectories there named 'a'
+	through 'p'.
+
+2.2	Change the host/IP and port for 'cpnet_console' (TelnetSerial)
+	to reflect your local IP address and a free port number.
+
+2.3	Change 'monitor_rom' to reflect the name of the ROM image created
+	in 1.1 (if different).
+
+2.4	Change 'netboot_dir' to reflect the desired directory for the
+	network boot images. This may be the same top-level directory
+	used in 'cpnet_server00'.
+
+2.5	Optionally un-comment the 'debugger' property. This enables
+	some simple debugging commands on the simulator. See DEBUGGER
+	for more information.
+
+2.6	Optionally un-comment the 'log' property, and set the desired
+	log file name. Normally, the simulator output is fairly limited
+	but when using the 'debugger' it is desirable to have the output
+	saved to a file.
+
+3. == serialserver ==
+3.1	Modify the shell variable "JAR1" to reference the actual path to
+	the file CpnetSerialServer.jar.
+
+3.2	Modify the shell variable "JAR2" to reference the actual path to
+	the downloaded file jSerialComm-2.6.2.jar.
+
+4. == /path/to/MinCPM ==
+4.1	Populate the chosen path for drive A: (e.g. /path/to/MinCPM/a)
+	with CP/NET and CP/M 2.2 utilities. The minimum required are
+	the files in the 'dist' subdirectory of this repository.
+	Additionally, CP/M 2.2 programs may be useful, such as
+	"stat.com", "ddt.com", etc.
+
+4.2	Add the "cpnos.sys" to the top level directory, or whatever
+	directory was specified for 'netboot_dir'.
+
+To run the simulation, use the command:
+
+	java -jar VirtualMinCpm.jar vmincpm-nb.rc
+
+To connect to the console, run "telnet 192.168.1.17 31123"
+(substituting the host/IP and port chosen in step 2.2), or
+an equivalent program, to connect. Note, telnet is not strictly
+required - any TCP/IP socket connection should work.
+Note that telnet needs to be running in "character" mode
+in order to function properly. Use the "mode character" command
+after starting, or else setup an entry in your .telnetrc file like:
+
+	192.168.1.17
+		mode character
+
+Once connected to the console, you should see:
+
+	Minimal System Monitor v0.5
+
+	: 
+
+Typing "?(cr)" will show a brief help of monitor commands:
+
+	: ?
+	B <sid> [string] - network boot
+	D <start> <end> - display memory in HEX
+	S <start> - set/view memory
+	G <start> - go to address
+	F <start> <end> <data> - fill memory
+	M <start> <end> <dest> - Move data
+	I <port> - Input from port
+	O <port> <value> - Output to port
+	V - Show ROM version
+	: 
+
+To start CP/NET (CP/NOS) type the command "B(cr)":
+
+	: B
+	COBIOS   SPR  FE00 0200
+	COBDOS   SPR  FB00 0300
+	SNIOS    SPR  F800 0300
+	NDOS     SPR  EC00 0C00
+
+	59K TPA
+	A>
+
+At this point, you are in a familiar CP/M "CCP" environment.
+One useful CP/NET command is "netstat" to show the network
+mappings:
+
+	A>netstat
+
+	CP/NET Status
+	=============
+	Requester ID = F0H
+	Network Status Byte = 10H
+	Device status:
+	  Drive A: = Drive A: on Network Server ID = 00H
+	  List Device = List #0 on Network Server ID = 00H
+	A>
+
+By default, only A: and LST: are networked. Since no local disks
+exist, the rest need to be networked as desired.
+
+The default/sample server configuration does not setup a LST: device,
+and only provides one server (00). However, that configuration may
+be expanded.
+
+To network another drive, use the "network" command. For example,
+to assign local drive B: to server 00 drive P:, use:
+
+	network b:=p:[0]
+
+Since server 00 is the default, the "[0]" could have been omitted.
+
+See CP/NET documentation for more information. This and documentation
+on CpnetSerialServer are provided in
+
+	https://github.com/durgadas311/cpnet-z80/tree/master/doc

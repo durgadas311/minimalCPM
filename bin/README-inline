@@ -1,8 +1,11 @@
-How to setup a demo using the simulator
+How to setup a demo using the simulator and inline boot
 
 These instructions are oriented for Linux/Unix(MAC OSX) systems.
 For Windows, some of these steps need to change. The following files
-need to be customized:
+need to be customized. However, the boot method must be chosen:
+
+For the "inline boot" option the CP/NOS image is appended to the ROM.
+The network is not used until CP/NOS is loaded and needs to read CCP.SPR.
 
 1. == ROM ==
 1.1	Build a ROM image by concatenating "mincpm.rom" and
@@ -61,7 +64,7 @@ after starting, or else setup an entry in your .telnetrc file like:
 
 Once connected to the console, you should see:
 
-	Minimal System Monitor v0.3
+	Minimal System Monitor v0.4
 
 	: 
 
