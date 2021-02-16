@@ -22,6 +22,8 @@ all: cpnos.sys
 
 cpnos.sys: cobdos.spr cobios.spr ndos.spr snios.spr
 	mknetboot -g -o $@ \
+		A:=A: \
+		LST:=0: \
 		-ndos ndos.spr \
 		-snios snios.spr \
 		-bdos cobdos.spr \

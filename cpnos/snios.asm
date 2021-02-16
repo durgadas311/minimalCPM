@@ -51,8 +51,9 @@ CFGTBL:
 Network$status:
 	db	0		; network status byte
 	db	0ffh		; slave processor ID number
-	dw	0080h		; A:=A:[0]
-	dw	0		; B:  Disk device
+	; Initial mappings made by 'mknetboot'
+	dw	0		; A:  Disk device
+	dw	0		; B:   "
 	dw	0		; C:   "
 	dw	0		; D:   "
 	dw	0		; E:   "
@@ -70,7 +71,7 @@ Network$status:
 
 	dw	0		; Console local, OOB
 
-	dw	0080h		; LST:=LST:[0]
+	dw	0		; LST: device
 	db	0		;	buffer index
 	db	0		;	FMT
 	db	0		;	DID

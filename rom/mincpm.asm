@@ -1,5 +1,5 @@
 ; ROM monitor/boot for Minimal CP/M System
-VERN	equ	003h	; ROM version
+VERN	equ	004h	; ROM version
 
 ; Memory map:
 ; 0 0000    ROM start
@@ -57,6 +57,7 @@ asxt	equ	12h
 savstk:	ds	2
 addr0:	ds	2
 addr1:	ds	2
+sid:	ds	1
 line:	ds	64
 
 stack	equ	00000h	; stack at top of memory (wrapped)
@@ -67,6 +68,7 @@ comlen	equ	1	; common length
 bnktop	equ	2	; banked top (not used)
 bnklen	equ	3	; banked length (00)
 entry	equ	4	; entry point of OS
+cfgtbl	equ	6	; CP/NET cfgtbl
 org0	equ	16	; not used(?)
 load	equ	128	; load map/message ('$' terminated)
 recs	equ	256	; records to load, top-down
@@ -361,9 +363,9 @@ ncmnds	equ	($-comnds)/3
 
 menu:
 if inline$boot
-	db	CR,LF,'B - inline boot'
+	db	CR,LF,'B <sid> - inline boot'
 else
-	db	CR,LF,'B [string] - network boot'
+	db	CR,LF,'B <sid> [string] - network boot'
 endif
 	db	CR,LF,'D <start> <end> - display memory in HEX'
 	db	CR,LF,'S <start> - set/view memory'
@@ -633,11 +635,19 @@ Vcomnd:
 ; future: network boot using optional string.
 ; TODO: support both? requires extra syntax.
 Bcomnd:
+	call	getaddr ;get port address, ignore extra MSDs
+	jc	error	; error if invalid
+	bit	7,b	;test for no entry
+	mvi	a,0
+	jrnz	boot8	;use 00
+	mov	a,l
+boot8:	push	psw	; cannot use RAM to save this...
 	call	crlf
 if inline$boot
 	; for now, no options, entire image in memory (ROM).
 	; but, need to reveal image using mmu$bbr.
 	; slide window up to 32K boundary
+	; Must not use RAM (at 2000h) after this...
 	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
 	out0	a,mmu$cbar
 	lxi	h,cpnos+load
@@ -689,7 +699,25 @@ boot4:
 	jrnz	boot4
 boot2:	; TODO: if we loaded nothing, DON'T JUMP
 	; CP/NOS BIOS will reset mmu$cbar
-	lhld	cpnos+entry
+	lhld	cpnos+cfgtbl
+	mov	a,h
+	ora	l
+	jrz	boot5
+	mvi	b,16+2	; A:-P:,CON:,LST:
+	pop	psw	; SID
+	mov	c,a	; C=SID
+	inx	h
+	inx	h
+boot7:	bit	7,m
+	inx	h
+	jrz	boot6
+	mov	a,m
+	cpi	0ffh
+	jrnz	boot6
+	mov	m,c
+boot6:	inx	h
+	djnz	boot7
+boot5:	lhld	cpnos+entry
 	pchl
 else
 	// TODO: implement network boot
