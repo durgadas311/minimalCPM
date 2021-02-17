@@ -767,8 +767,10 @@ else
 	ora	a
 	jnz	error
 
-	mvi	c,0
 	lxi	h,msgbuf+DAT
+	mvi	m,0	; len, re-set later
+	inx	h
+	mvi	c,1	; incl. len and NUL
 boot1:
 	call	char
 	jrz	boot0
@@ -784,6 +786,8 @@ boot0:	mov	m,a
 boot2:	mvi	m,0
 	mov	a,c	; SIZ incl NUL
 	sta	msgbuf+SIZ
+	dcr	a
+	sta	msgbuf+DAT
 	lda	boot$server
 	sta	msgbuf+DID
 	lda	client$id
