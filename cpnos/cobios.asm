@@ -275,12 +275,13 @@ error:
 ; A=char
 sendby:
 	push	psw
+sendb0:
 	in0	a,ctlb
 	ani	00100000b	; /CTS
-	jrnz	sendby
+	jrnz	sendb0
 	in0	a,stat
 	ani	00000010b	; TDRE
-	jrz	sendby
+	jrz	sendb0
 	pop	psw
 	out0	a,tdr
 	ret
