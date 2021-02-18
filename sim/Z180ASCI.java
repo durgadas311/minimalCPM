@@ -12,6 +12,7 @@ import z80core.ComputerIO;
 public class Z180ASCI implements ComputerIO {
 	static final int fifoLimit = 10; // should never even exceed 2
 	private String name = null;
+	private BaseSystem sys;
 
 	static final int CNTLA = 0;	// port after shift
 	static final int CNTLB = 1;	// port after shift
@@ -32,7 +33,8 @@ public class Z180ASCI implements ComputerIO {
 	static final int ctlb_baud = 0x07;	// clk ratio, or ext
 	static final int ctlb_dr = 0x08;	// div16/div64
 	static final int ctlb_peo = 0x10;	// even/odd parity
-	static final int ctlb_cts = 0x20;	// /CTS - "0" is asserted
+	static final int ctlb_cts = 0x20;	// R/O: /CTS - "0" is asserted
+	static final int ctlb_ps = 0x20;	// W/O: PS (prescale) BRG
 	static final int ctlb_mp = 0x40;	// multiprocessor not supported
 	static final int ctlb_mpbt = 0x80;	// multiprocessor not supported
 
@@ -56,7 +58,8 @@ public class Z180ASCI implements ComputerIO {
 
 	private Z180ASCIChan[] ports = new Z180ASCIChan[2];
 
-	public Z180ASCI(Properties props) {
+	public Z180ASCI(Properties props, BaseSystem sys) {
+		this.sys = sys;
 		name = "Z180_ASCI";
 		ports[0] = new Z180ASCIChan(props, "asci0", 0, null);
 		ports[1] = new Z180ASCIChan(props, "asci1", 1, ports[0]);
@@ -96,7 +99,9 @@ public class Z180ASCI implements ComputerIO {
 		private long lastTx = 0;
 		private long lastRx = 0;
 		private long nanoBaud = 0; // length of char in nanoseconds
+		private int baud = 0;
 		private int bits; // bits per character
+		private boolean prescale; // PS bit in reg_ctlb (W/O)
 		private int index;
 		private Z180ASCIChan chA; // null on Ch A
 		private int modem = 0;	// modem inputs, floating
@@ -152,24 +157,67 @@ public class Z180ASCI implements ComputerIO {
 			}
 		}
 
-		private void set_ctla(int val) {
-			bits = (val & ctla_bt8) == 0 ? 7 : 8;
-			bits += (val & ctla_pen) == 0 ? 0 : 1;
-			bits += (val & ctla_st2) == 0 ? 1 : 2;
+		private void recalcBaud() {
+			bits = (reg_ctla & ctla_bt8) == 0 ? 7 : 8;
+			bits += (reg_ctla & ctla_pen) == 0 ? 0 : 1;
+			bits += (reg_ctla & ctla_st2) == 0 ? 1 : 2;
 			bits += 1;	// always 1 start bit
+			if ((reg_asxt & asxt_brg) == 0) {
+				int ps = (prescale ? 30 : 10); // TODO: always?
+				int dr = ((reg_ctlb & ctlb_dr) != 0 ? 64 : 16);
+				int ss = (reg_ctlb & ctlb_baud);
+				int ck = sys.cpuClock();
+				if (ss < 0b111) {
+					ss = 1 << ss;
+				} else {
+					if (index == 0) {
+						ck = sys.extClock1();
+					} else {
+						ck = sys.extClock2();
+					}
+					// TODO: what does EXT mean for us?
+					ss = 1;	// TODO: fix this
+					ps = 1; // TODO: fix this
+					dr = 1; // TODO: fix this
+				}
+				if ((reg_asxt & asxt_1x) != 0) dr = 1;
+				baud = ck / ps / dr / ss;
+				if (baud == 0) {
+					nanoBaud = (long)1000000000;
+				} else {
+					nanoBaud = ((long)1000000000 * bits) / baud;
+				}
+			} else {
+				// TODO: BRG
+			}
+			//System.err.format("%s-%c: %d bits, %d baud, %d nS/char\n",
+			//	name, index + '0', bits, baud, nanoBaud);
+			//System.err.print(dumpDebug());
+		}
+
+		private void set_ctla(int val) {
 			// TODO: implement parity... mask bits...
 			reg_ctla = val;
 			// TODO: only if RTS changed?
 			updateModemOut();
+			recalcBaud();	// word size affects value
 		}
 
 		private void set_ctlb(int val) {
+			// ctlb_ps and ctlb_cts are the same bit!
+			prescale = ((val & ctlb_ps) != 0);
+			reg_ctlb = (val & ~ctlb_ps) | (reg_ctlb & ctlb_cts);
+			recalcBaud();	// PS and DR affect value
 		}
 
 		private void set_stat(int val) {
+			reg_stat = (val & (stat_rie | stat_tie)) |
+				(reg_stat & ~(stat_rie | stat_tie));
 		}
 
 		private void set_asxt(int val) {
+			reg_asxt = val;
+			recalcBaud();	// BRG and X1 affect value
 		}
 
 		// 'port' has been shifted! 0-4, 9
@@ -183,6 +231,14 @@ public class Z180ASCI implements ComputerIO {
 				val = reg_ctlb;
 				break;
 			case STAT:
+				long t = System.nanoTime();
+				if (t - lastTx > nanoBaud) {
+					if (io_out || fifo.size() < 2) {
+						reg_stat |= stat_tdre;
+						lastTx = t;
+					}
+				}
+				// TODO: handle lastRx somehow
 				val = reg_stat;
 				break;
 			case TDR:
@@ -221,17 +277,16 @@ public class Z180ASCI implements ComputerIO {
 				set_stat(val);
 				break;
 			case TDR:
+				lastTx = System.nanoTime();
 				if (io_out) {
 					io.write(val);
 				}
 				if (!io_out || !excl) {
 					synchronized (this) {
 						fifo.add(val);
-						if (attObj != null) {
-							reg_stat &= ~stat_tdre;
-						}
 					}
 				}
+				reg_stat &= ~stat_tdre;
 				break;
 			case RDR:
 				// not allowed
@@ -249,10 +304,12 @@ public class Z180ASCI implements ComputerIO {
 			reg_ctlb = ctlb_baud | ctlb_cts; // EXT clock, CTS off, by default
 			reg_stat = stat_tdre | stat_dcd; // TDRE on, DCD off, by default
 			reg_asxt = 0;
+			prescale = false;
 			// TODO: update other bits?
 			wait.release();
 			updateModemForce();
 			_setModem();
+			recalcBaud();
 		}
 
 		////////////////////////////////////////////////////
@@ -419,6 +476,13 @@ public class Z180ASCI implements ComputerIO {
 
 		public String dumpDebug() {
 			String ret = new String();
+			ret += String.format("--- %s-%c ---\n", name, index + '0');
+			ret += String.format(" CNTLA = %02x CNTLB = %02x PS=%s\n",
+				reg_ctla, reg_ctlb, prescale);
+			ret += String.format("  STAT = %02x ASEXT = %02x\n",
+				reg_stat, reg_asxt);
+			ret += String.format(" %d bits, %d baud, %d nS/char\n",
+						bits, baud, nanoBaud);
 			if (io != null) {
 				ret += io.dumpDebug();
 			}

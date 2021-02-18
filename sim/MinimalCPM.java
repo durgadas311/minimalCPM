@@ -12,7 +12,7 @@ import z80core.*;
 // TODO: Make hardware configurable...
 // No I/O (outside Z180), no interrupts, ...
 // A19 selects RAM/ROM...
-public class MinimalCPM implements Computer, Commander, Runnable {
+public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 	private Z180 cpu;
 	private long clock;
 	private Memory mem;
@@ -27,7 +27,10 @@ public class MinimalCPM implements Computer, Commander, Runnable {
 	private Vector<ClockListener> clks;
 	private Vector<TimeListener> times;
 	private int cpuSpeed = 18432000;
-	private int cpuCycle2ms = 36864;
+	private int extSpeed1 = 0;
+	private int extSpeed2 = 0;
+	private int extSpeed3 = 0;
+	private int cpuCycle1ms = 18432;
 	private int nanoSecCycle = 54;	// 54.25347222...
 	private Z80Disassembler disas;
 	private StdioDebugger dbg;
@@ -61,8 +64,28 @@ public class MinimalCPM implements Computer, Commander, Runnable {
 		} else {
 			System.err.format("Using configuration from %s\n", s);
 		}
+		s = props.getProperty("cpu_speed");
+		if (s != null) {
+			int c = getSpeed("cpu_speed", s);
+			if (c != 0) cpuSpeed = c;
+		}
+		s = props.getProperty("ext_speed1");
+		if (s != null) {
+			int c = getSpeed("ext_speed1", s);
+			if (c != 0) extSpeed1 = c;
+		}
+		s = props.getProperty("ext_speed2");
+		if (s != null) {
+			int c = getSpeed("ext_speed2", s);
+			if (c != 0) extSpeed2 = c;
+		}
+		s = props.getProperty("ext_speed3");
+		if (s != null) {
+			int c = getSpeed("ext_speed3", s);
+			if (c != 0) extSpeed3 = c;
+		}
 		// Now build hardware...
-		asci = new Z180ASCI(props);
+		asci = new Z180ASCI(props, this);
 		cpu = new Z180(this, asci);
 		mem = new SimpleRAM_ROM(props);
 		disas = new Z180DisassemblerMAC80(mem, cpu);
@@ -81,6 +104,28 @@ public class MinimalCPM implements Computer, Commander, Runnable {
 			dbg = new StdioDebugger(props, this);
 		}
 	}
+
+	private int getSpeed(String p, String s) {
+		int c = 0;
+		try {
+			c = Integer.valueOf(s);
+			if (c < 1000000 || c > 50000000) {
+				System.err.format("%s: Invalid clock speed %d\n", p, c);
+				c = 0;
+			}
+		} catch (Exception ee) {
+			System.err.format("%s: %s\n", p, ee.getMessage());
+			c = 0;
+		}
+		return c;
+	}
+
+	///////////////////////////////
+	// BaseSystem implementation //
+	public int cpuClock() { return cpuSpeed; }
+	public int extClock1() { return extSpeed1; }
+	public int extClock2() { return extSpeed2; }
+	public int extClock3() { return extSpeed3; }
 
 	// These must NOT be called from the thread...
 	public void start() {
@@ -111,6 +156,7 @@ public class MinimalCPM implements Computer, Commander, Runnable {
 		mem.reset();
 		asci.reset();
 		// anything else needs reset?
+		backlogNs = 0;
 	}
 
 	private void addTicks(int ticks) {
@@ -172,6 +218,10 @@ public class MinimalCPM implements Computer, Commander, Runnable {
 				if (args[1].equalsIgnoreCase("mach")) {
 					ret.add(dumpDebug());
 				}
+				// TODO: should be part of cpu?
+				if (args[1].equalsIgnoreCase("asci")) {
+					ret.add(asci.dumpDebug());
+				}
 				return ret;
 			}
 			err.add("badcmd");
@@ -227,7 +277,7 @@ public class MinimalCPM implements Computer, Commander, Runnable {
 		int limit = 0;
 		while (running) {
 			cpuLock.lock(); // might sleep waiting for external s/w
-			limit += cpuCycle2ms;
+			limit += cpuCycle1ms;
 			long t0 = System.nanoTime();
 			int traced = 0; // assuming any tracing cancels 2mS accounting
 			while (running && limit > 0) {
@@ -273,11 +323,12 @@ public class MinimalCPM implements Computer, Commander, Runnable {
 			}
 			long t1 = System.nanoTime();
 			if (traced == 0) {
-				backlogNs += (2000000 - (t1 - t0));
+				backlogNs += (1000000 - (t1 - t0));
 				t0 = t1;
-				if (backlogNs > 10000000) {
+				if (backlogNs >= 100000) {
 					try {
-						Thread.sleep(10);
+						Thread.sleep(backlogNs / 100000,
+							(int)(backlogNs % 100000));
 					} catch (Exception ee) {}
 					t1 = System.nanoTime();
 					backlogNs -= (t1 - t0);
@@ -395,7 +446,14 @@ public class MinimalCPM implements Computer, Commander, Runnable {
 	}
 
 	public String dumpDebug() {
-		// TODO: what to dump?
-		return "";
+		String ret = String.format("CPU clock = %gMHz\n", (double)cpuSpeed / 1e6);
+		ret += String.format("CKA0 clock = %gMHz\n", (double)extSpeed1 / 1e6);
+		ret += String.format("CKA1 clock = %gMHz\n", (double)extSpeed2 / 1e6);
+		ret += String.format("CKS clock = %gMHz\n", (double)extSpeed3 / 1e6);
+		ret += String.format("Backlog = %d nS\n", backlogNs);
+		ret += String.format("Tracing = %s\n", tracing);
+		ret += String.format("Trace cycles = %d\n", traceCycles);
+		ret += String.format("Trace PC = %04x %04x\n", traceLow, traceHigh);
+		return ret;
 	}
 }
