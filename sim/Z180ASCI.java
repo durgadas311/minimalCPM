@@ -322,12 +322,12 @@ public class Z180ASCI implements ComputerIO {
 		public int take() {
 			try {
 				int c = fifo.take(); // might sleep here...
-				// TODO: how does this work with baud rate?
-				if (fifo.size() == 0 || attObj == null) {
-					synchronized (this) {
-						reg_stat |= stat_tdre;
-					}
-				}
+//				// TODO: how does this work with baud rate?
+//				if (fifo.size() == 0 || attObj == null) {
+//					synchronized (this) {
+//						reg_stat |= stat_tdre;
+//					}
+//				}
 				return c;
 			} catch(Exception ee) {
 				// let caller do detach?
