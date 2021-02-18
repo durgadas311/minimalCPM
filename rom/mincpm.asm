@@ -1,5 +1,5 @@
 ; ROM monitor/boot for Minimal CP/M System
-VERN	equ	005h	; ROM version
+VERN	equ	006h	; ROM version
 
 ; Memory map:
 ; 0 0000    ROM start
@@ -43,6 +43,7 @@ bcr0h	equ	27h
 dstat	equ	30h
 dmode	equ	31h
 dcntl	equ	32h
+rcr	equ	36h
 
 ; ASCI registers
 ctla	equ	00h
@@ -51,6 +52,14 @@ stat	equ	04h
 tdr	equ	06h
 rdr	equ	08h
 asxt	equ	12h
+
+; Settings for 115200 baud at 18.432MHz
+asc$ss	equ	00000$000b	; SS0-2, divide by 1
+asc$ps	equ	00$0$00000b	; PS: divide by 10
+asc$dr	equ	0000$0$000b	; DR: divide by 16
+asc$brg	equ	0000$0$000b	; BRG: PS drives divide by 10/30 (W/O)
+				; 18.432MHz/10/16 = 115200baud
+; TODO: settings for other CPU speeds
 
 ; RAM used...
 	org	02000h
@@ -165,6 +174,10 @@ init0:
 	lxi	sp,stack
 	sspd	savstk
 	; for now, leave ROM in ROM...
+	; CPU init:
+	xra	a	; refresh off... static RAM
+	out	rcr
+	; TODO: init/optimize memory WAIT...
 	call	coninit
 	call	meminit
 	lxi	h,signon
@@ -192,17 +205,18 @@ conot1:
 
 ; Based on 18.432MHz CPU clock... 115200 baud...
 ; ctla: MOD=8n1,  TE=1, RE=1
-; ctlb: SS=div1, DR=0, PS=1
+; ctlb: SS=div1, DR=0(16x), PS=1
 ; stat: RIE=0, TIE=0 (no interrupts)
-; asxt: BRG=0, X1=0
+; asxt: BRG=0(div10 if DR=0), X1=0
+; TODO: customize baud settings for CPU speed
 coninit:
 	mvi	a,01100100b	; TE/RE, 8+n+1
 	out0	a,ctla
-	mvi	a,00100000b	; 16x, div10, TODO: speed settings
+	mvi	a,00000000b+asc$ps+asc$dr
 	out0	a,ctlb
 	mvi	a,00000000b	; ...
 	out0	a,stat
-	mvi	a,01100110b	; DCD/CTS, BREAK enable
+	mvi	a,01100110b+asc$brg	; DCD/CTS, BREAK enable
 	out0	a,asxt
 	; TODO: what else...
 	ret
@@ -694,7 +708,7 @@ if inline$boot
 	lxi	h,cpnos+recs	; HL=source of data
 	lda	cpnos+comlen	; honor possible variations...
 	ora	a
-	jrz	boot1
+	jrz	bi1
 	add	a	; num records (128B)
 	mov	b,a
 	lda	cpnos+memtop
@@ -706,16 +720,16 @@ if inline$boot
 	dad	b
 	xchg
 	; A = count
-boot3:
+bi3:
 	lxi	b,128	; 128B at a time
 	ldir
 	dcr	d	; DE + 128 - 256
 	dcr	a
-	jrnz	boot3
-boot1:
+	jrnz	bi3
+bi1:
 	lda	cpnos+bnklen	; honor possible variations...
 	ora	a
-	jz	boot2
+	jz	bi2
 	; never used for CP/NOS?
 	add	a	; num records (128B)
 	mov	b,a
@@ -728,33 +742,33 @@ boot1:
 	dad	b
 	xchg
 	; A = count
-boot4:
+bi4:
 	lxi	b,128	; 128B at a time
 	ldir
 	dcr	d	; DE + 128 - 256
 	dcr	a
-	jrnz	boot4
-boot2:	; TODO: if we loaded nothing, DON'T JUMP
+	jrnz	bi4
+bi2:	; TODO: if we loaded nothing, DON'T JUMP
 	; CP/NOS BIOS will reset mmu$cbar
 	lhld	cpnos+cfgtab
 	mov	a,h
 	ora	l
-	jrz	boot5
+	jrz	bi5
 	mvi	b,16+2	; A:-P:,CON:,LST:
 	pop	psw	; SID
 	mov	c,a	; C=SID
 	inx	h
 	inx	h
-boot7:	bit	7,m
+bi7:	bit	7,m
 	inx	h
-	jrz	boot6
+	jrz	bi6
 	mov	a,m
 	cpi	0ffh
-	jrnz	boot6
+	jrnz	bi6
 	mov	m,c
-boot6:	inx	h
-	djnz	boot7
-boot5:	lhld	cpnos+entry
+bi6:	inx	h
+	djnz	bi7
+bi5:	lhld	cpnos+entry
 	pchl
 else
 	; TODO: parse optional string...
@@ -771,19 +785,19 @@ else
 	mvi	m,0	; len, re-set later
 	inx	h
 	mvi	c,1	; incl. len and NUL
-boot1:
+bn1:
 	call	char
-	jrz	boot0
+	jrz	bn2	; no string present
 	cpi	' '
-	jrz	boot1
-boot0:	mov	m,a
+	jrz	bn1
+bn0:	mov	m,a
 	inx	h
 	inr	c
 	call	char
-	jrz	boot2
+	jrz	bn2
 	cpi	' '
-	jrnz	boot0
-boot2:	mvi	m,0
+	jrnz	bn0
+bn2:	mvi	m,0
 	mov	a,c	; SIZ incl NUL
 	sta	msgbuf+SIZ
 	dcr	a
