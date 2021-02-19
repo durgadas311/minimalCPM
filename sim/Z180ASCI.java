@@ -20,11 +20,14 @@ public class Z180ASCI implements ComputerIO {
 	static final int TDR = 3;	// port after shift
 	static final int RDR = 4;	// port after shift
 	static final int ASEXT = 9;	// port after shift
+	static final int TCL = 13;	// port after shift
+	static final int TCH = 14;	// port after shift
 
 	static final int ctla_st2 = 0x01;	// 2 stop bits (else 1)
 	static final int ctla_pen = 0x02;	// parity enable
 	static final int ctla_bt8 = 0x04;	// 8 bit data
-	static final int ctla_mpbr = 0x08;	// multiprocessor not supported
+	static final int ctla_mpbr = 0x08;	// R/O multiprocessor not supported
+	static final int ctla_efr = 0x08;	// W/O error reset
 	static final int ctla_rts = 0x10;	// /RTS - "0" is asserted (chan 0 only)
 	static final int ctla_te = 0x20;	// Tx enable
 	static final int ctla_re = 0x40;	// Rx enable
@@ -57,10 +60,13 @@ public class Z180ASCI implements ComputerIO {
 	static final int asxt_rdrf = 0x80;	// 
 
 	private Z180ASCIChan[] ports = new Z180ASCIChan[2];
+	private boolean z180s;
 
 	public Z180ASCI(Properties props, BaseSystem sys) {
 		this.sys = sys;
 		name = "Z180_ASCI";
+		String s = props.getProperty("cpu");
+		z180s = (s != null && s.equalsIgnoreCase("Z80S180"));
 		ports[0] = new Z180ASCIChan(props, "asci0", 0, null);
 		ports[1] = new Z180ASCIChan(props, "asci1", 1, ports[0]);
 		reset();
@@ -69,13 +75,31 @@ public class Z180ASCI implements ComputerIO {
 	///////////////////////////////
 	/// Interfaces for IODevice ///
 	public int inPort(int port) {
-		int x = port & 1;
-		return ports[x].in(port >> 1);
+		int x;
+		int p;
+		if (port >= 0x1a) { // special case TC registers...
+			// 1A,1B => [0] 0D,0E; 1C,1D => [1] 0D,0E
+			x = (port & 0b00100) >> 2;
+			p = (port & 0b01101) | 0b00100;
+		} else {
+			x = port & 1;
+			p = port >> 1;
+		}
+		return ports[x].in(p);
 	}
 
 	public void outPort(int port, int val) {
-		int x = port & 1;
-		ports[x].out(port >> 1, val);
+		int x;
+		int p;
+		if (port >= 0x1a) { // special case TC registers...
+			// 1A,1B => [0] 0D,0E; 1C,1D => [1] 0D,0E
+			x = (port & 0b00100) >> 2;
+			p = (port & 0b01101) | 0b00100;
+		} else {
+			x = port & 1;
+			p = port >> 1;
+		}
+		ports[x].out(p, val);
 	}
 
 	public void reset() {
@@ -115,6 +139,7 @@ public class Z180ASCI implements ComputerIO {
 		private int reg_ctlb = 0;
 		private int reg_stat = 0;
 		private int reg_asxt = 0;
+		private int reg_tc = 0;	// Z80S180 only
 
 		public Z180ASCIChan(Properties props, String pfx, int idx, Z180ASCIChan alt) {
 			chA = alt;
@@ -162,33 +187,36 @@ public class Z180ASCI implements ComputerIO {
 			bits += (reg_ctla & ctla_pen) == 0 ? 0 : 1;
 			bits += (reg_ctla & ctla_st2) == 0 ? 1 : 2;
 			bits += 1;	// always 1 start bit
-			if ((reg_asxt & asxt_brg) == 0) {
-				int ps = (prescale ? 30 : 10); // TODO: always?
-				int dr = ((reg_ctlb & ctlb_dr) != 0 ? 64 : 16);
-				int ss = (reg_ctlb & ctlb_baud);
-				int ck = sys.cpuClock();
-				if (ss < 0b111) {
-					ss = 1 << ss;
+			int ss = (reg_ctlb & ctlb_baud);
+			int dr = ((reg_ctlb & ctlb_dr) != 0 ? 64 : 16);
+			if (ss == 0b111) {
+				int ck;
+				if (index == 0) {
+					ck = sys.extClock1();
 				} else {
-					if (index == 0) {
-						ck = sys.extClock1();
-					} else {
-						ck = sys.extClock2();
-					}
-					// TODO: what does EXT mean for us?
-					ss = 1;	// TODO: fix this
-					ps = 1; // TODO: fix this
-					dr = 1; // TODO: fix this
+					ck = sys.extClock2();
 				}
-				if ((reg_asxt & asxt_1x) != 0) dr = 1;
-				baud = ck / ps / dr / ss;
+				// TODO: what does EXT mean for us?
+				dr = 1; // TODO: fix this
+				baud = ck / dr;
 				if (baud == 0) {
 					nanoBaud = (long)1000000000;
 				} else {
 					nanoBaud = ((long)1000000000 * bits) / baud;
 				}
 			} else {
-				// TODO: BRG
+				int ck = sys.cpuClock();
+				int ps = (prescale ? 30 : 10); // TODO: always?
+				if ((reg_asxt & asxt_1x) != 0) dr = 1;
+				if ((reg_asxt & asxt_brg) == 0) {
+					ss = 1 << ss;
+				} else {
+					// TODO: BRG=1 (only for Z80S180?)
+					ss = (reg_tc + 2) * 2;
+					ps = 1; // prescale bypassed?
+				}
+				baud = ck / ps / dr / ss;
+				nanoBaud = ((long)1000000000 * bits) / baud;
 			}
 			//System.err.format("%s-%c: %d bits, %d baud, %d nS/char\n",
 			//	name, index + '0', bits, baud, nanoBaud);
@@ -197,7 +225,10 @@ public class Z180ASCI implements ComputerIO {
 
 		private void set_ctla(int val) {
 			// TODO: implement parity... mask bits...
-			reg_ctla = val;
+			reg_ctla = val & ~ctla_mpbr;
+			if ((val & ctla_efr) != 0) {
+				reg_stat &= ~(stat_fe | stat_pe | stat_ovrn);
+			}
 			// TODO: only if RTS changed?
 			updateModemOut();
 			recalcBaud();	// word size affects value
@@ -218,6 +249,12 @@ public class Z180ASCI implements ComputerIO {
 		private void set_asxt(int val) {
 			reg_asxt = val;
 			recalcBaud();	// BRG and X1 affect value
+		}
+
+		private void set_tc(int val) {
+			if (!z180s) return;
+			reg_tc = val;
+			recalcBaud();	// if BRG=1
 		}
 
 		// 'port' has been shifted! 0-4, 9
@@ -260,6 +297,12 @@ public class Z180ASCI implements ComputerIO {
 			case ASEXT:
 				val = reg_asxt;
 				break;
+			case TCL:
+				val = reg_tc & 0xff;
+				break;
+			case TCH:
+				val = (reg_tc >> 8) & 0xff;
+				break;
 			}
 			return val;
 		}
@@ -293,6 +336,12 @@ public class Z180ASCI implements ComputerIO {
 				break;
 			case ASEXT:
 				set_asxt(val);
+				break;
+			case TCL:
+				set_tc((reg_tc & 0xff00) | val);
+				break;
+			case TCH:
+				set_tc((reg_tc & 0x00ff) | (val << 8));
 				break;
 			}
 		}
