@@ -1,5 +1,6 @@
 // Copyright (c) 2021 Douglas Miller <durgadas311@gmail.com>
 
+import java.util.Arrays;
 import java.util.Properties;
 import java.io.*;
 
@@ -14,6 +15,7 @@ public class ROM implements Memory {
 		String s = props.getProperty("rom_size");
 		int len = getSize(s);
 		mem = new byte[len];
+		Arrays.fill(mem, (byte)0xff);
 		msk = len - 1;
 		s = props.getProperty("monitor_rom");
 		if (s == null) {
