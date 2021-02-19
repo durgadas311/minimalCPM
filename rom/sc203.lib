@@ -1,0 +1,13 @@
+; Config file for SC203 and compatible platforms
+; CPU clock = 18.432 MHz.
+; Z80180 CPU.
+
+z180	equ	true
+z180s	equ	false
+
+; Settings for 115200 baud at 18.432MHz
+asc$ss	equ	00000$000b	; SS0-2, divide by 1
+asc$ps	equ	00$0$00000b	; PS: divide by 10
+asc$dr	equ	0000$0$000b	; DR: divide by 16
+asc$brg	equ	0000$0$000b	; BRG: PS drives divide by 10/30 (W/O)
+				; 18.432MHz/10/16/1 = 115200baud

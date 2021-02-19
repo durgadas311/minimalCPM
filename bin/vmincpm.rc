@@ -1,17 +1,34 @@
 # Example config file for VirtualMinCpm.jar
+# running Network Boot and CpnetSerialServer
 # NOTE: 'asci0_att' must be set for the simulation to function.
-
-# Use these with 'mincpm' shell script (stty):
-#asci0_att = StdioSerial
 #log = vmincpm.log
 
-# Alternate use with a "telnet" console:
-#asci0_att = TelnetSerial 192.168.1.17 31123 modem
-# no log needed, but optional
-
-# These are defaults
 ram_size = 64k
-rom_size = 8k
+rom_size = 32k
+# This ROM is mincpm.rom and cpnos.sys concatinated
+monitor_rom = mincpm.rom
+#Enable simple debugging commands on stdin
+#debugger
 
+# BEWARE: tracing tends to cause server timeouts.
 # This traces the first 1000 CPU cycles (worth of instructions)
 #trace = trace cycles 1000
+# This traces the CP/NOS code, excl CCP.SPR
+#trace = trace pc ED00 FFFF
+
+# Use CpnetSerialServer.jar via shell script.
+# "conf=" must reference _this_ file.
+asci0_att = ProgramSerial serialserver conf=vmincpm.rc log=clientF0.log
+# These are CpnetSerialServer.jar properties:
+cpnet_console = TelnetSerial 192.168.1.17 31123 modem
+cpnet_console_oob
+cpnet_tty = stdio
+cpnet_cid = f0
+cpnet_server00 = HostFileBdos /path/to/MinCPM
+cpnet_protocol = dri
+#cpnet_debug = 1
+# Only needed if network boot is being used.
+# Select a directory for netboot images. Here we re-use HostFileBdos dir.
+netboot_dir = /path/to/MinCPM
+netboot_default = cpnos.sys
+netboot_org0 = none

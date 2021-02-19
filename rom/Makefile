@@ -1,10 +1,17 @@
-all: mincpm.rom
+PLAT = sc203
 
-%.rom: zout/%.cim
+all: mincpm-$(PLAT).rom
+
+%-$(PLAT).rom: zout/%.cim
 	cp $< $@
 
-zout/%.cim: %.asm
+config.lib: $(PLAT).lib __FRC__
+	cp $< $@
+
+zout/%.cim: %.asm config.lib
 	zmac --dri -8 -c -s -n $<
 
 ship:
-	rsync -Wuv mincpm.rom ../bin
+	rsync -Wuv mincpm-*.rom ../bin
+
+__FRC__:

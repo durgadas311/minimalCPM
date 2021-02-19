@@ -1,0 +1,17 @@
+# Example config file for VirtualMinCpm.jar, no server
+# NOTE: 'asci0_att' must be set for the simulation to function.
+
+# Use these with 'mincpm' shell script (stty):
+#asci0_att = StdioSerial
+#log = vmincpm.log
+
+# Alternate use with a "telnet" console:
+#asci0_att = TelnetSerial 192.168.1.17 31123 modem
+# no log needed, but optional
+
+# These are defaults
+ram_size = 64k
+rom_size = 32k
+
+# This traces the first 1000 CPU cycles (worth of instructions)
+#trace = trace cycles 1000

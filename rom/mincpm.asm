@@ -1,5 +1,7 @@
 ; ROM monitor/boot for Minimal CP/M System
-VERN	equ	006h	; ROM version
+VERN	equ	007h	; ROM version
+
+romsiz	equ	1000h	; minimum space for ROM
 
 ; Memory map:
 ; 0 0000    ROM start
@@ -12,8 +14,7 @@ VERN	equ	006h	; ROM version
 false	equ	0
 true	equ	not false
 
-; Is boot image appended to ROM?
-inline$boot	equ	false
+	include	config.lib
 
 	$*macro
 
@@ -45,21 +46,17 @@ dmode	equ	31h
 dcntl	equ	32h
 rcr	equ	36h
 
-; ASCI registers
+; ASCI0 registers
 ctla	equ	00h
 ctlb	equ	02h
 stat	equ	04h
 tdr	equ	06h
 rdr	equ	08h
 asxt	equ	12h
-
-; Settings for 115200 baud at 18.432MHz
-asc$ss	equ	00000$000b	; SS0-2, divide by 1
-asc$ps	equ	00$0$00000b	; PS: divide by 10
-asc$dr	equ	0000$0$000b	; DR: divide by 16
-asc$brg	equ	0000$0$000b	; BRG: PS drives divide by 10/30 (W/O)
-				; 18.432MHz/10/16 = 115200baud
-; TODO: settings for other CPU speeds
+if z180s
+astcl	equ	1ah
+astch	equ	1bh
+endif
 
 ; RAM used...
 	org	02000h
@@ -67,7 +64,8 @@ savstk:	ds	2
 addr0:	ds	2
 addr1:	ds	2
 line:	ds	64
-if NOT inline$boot
+; Boot, CP/NOS
+ibi:		ds	1
 boot$server	ds	1
 retry$count:	ds	1
 msg$adr:	ds	2
@@ -86,7 +84,6 @@ SID	equ	2
 FNC	equ	3
 SIZ	equ	4
 DAT	equ	5
-endif
 
 stack	equ	00000h	; stack at top of memory (wrapped)
 
@@ -104,7 +101,7 @@ recs	equ	256	; records to load, top-down
 ; Start of ROM code
 	org	00000h
 
-	jmp	init	; must be JMP so Heath CP/M thinks we're an H89
+	jmp	init
 
 	rept	0008h-$
 	db	0ffh
@@ -182,8 +179,31 @@ init0:
 	call	meminit
 	lxi	h,signon
 	call	msgprt
+	call	chkibi
 	; save registers on stack, for debugger access...
 	jmp	debug
+
+; check for inline boot image...
+chkibi:
+	in0	a,mmu$cbar
+	push	psw
+	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
+	out0	a,mmu$cbar
+	; assume missing if 128 bytes of FF exist there.
+	lxi	h,cpnos
+	mvi	a,0ffh
+	mvi	b,128
+init1:	cmp	m
+	jrnz	init2
+	inx	h
+	djnz	init1
+	xra	a
+init2:	mov	c,a	; 00 or FF
+	pop	psw
+	out0	a,mmu$cbar
+	mov	a,c
+	sta	ibi	; 00 or FF
+	ret
 
 belout:
 	mvi	c,BEL
@@ -245,8 +265,8 @@ dmacpy:
 	mvi	a,01100000b	; DE0,/DWE0(!/DWE1) - start ch 0
 	out0	a,dstat
 	mvi	c,dstat
-init1:	tstio	01000000b	; wait for DMAC to idle
-	jrnz	init1
+dmac1:	tstio	01000000b	; wait for DMAC to idle
+	jrnz	dmac1
 	ret
 
 ; initialize monitor memory variables
@@ -411,11 +431,7 @@ ncmnds	equ	($-comnds)/3
 *********************************************************
 
 menu:
-if inline$boot
-	db	CR,LF,'B <sid> - inline boot'
-else
 	db	CR,LF,'B <sid> [string] - network boot'
-endif
 	db	CR,LF,'D <start> <end> - display memory in HEX'
 	db	CR,LF,'S <start> - set/view memory'
 	db	CR,LF,'G <start> - go to address'
@@ -424,9 +440,16 @@ endif
 	db	CR,LF,'I <port> - Input from port'
 	db	CR,LF,'O <port> <value> - Output to port'
 	db	CR,LF,'V - Show ROM version'
-	db	0
+	db	TRM
 
-Qcomnd:	lxi	h,menu
+iboot:	db	CR,LF,'BI <sid> - inline boot image',TRM
+
+Qcomnd:	lda	ibi
+	ora	a
+	jrz	qc0
+	lxi	h,iboot
+	call	msgprt
+qc0:	lxi	h,menu
 	jmp	msgprt
 
 Mcomnd:	call	getaddr
@@ -684,95 +707,19 @@ Vcomnd:
 ; future: network boot using optional string.
 ; TODO: support both? requires extra syntax.
 Bcomnd:
-	call	getaddr ;get server ID, ignore extra MSDs
+	call	char
+	jrz	bn7
+	cpi	'I'
+	jz	Binline
+	; network boot command
+	dcx	d	; ungetc()
+bn7:	call	getaddr ;get server ID, ignore extra MSDs
 	jc	error	; error if invalid
 	bit	7,b	;test for no entry
 	mvi	a,0
-	jrnz	boot8	;use 00
+	jrnz	bn8	;use 00
 	mov	a,l
-boot8:
-if inline$boot
-	push	psw	; cannot use RAM to save this...
-	sta	boot$server
-	call	crlf
-	; for now, no options, entire image in memory (ROM).
-	; but, need to reveal image using mmu$bbr.
-	; slide window up to 32K boundary
-	; Must not use RAM (at 2000h) after this...
-	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
-	out0	a,mmu$cbar
-	lxi	h,cpnos+ldmsg
-	call	print
-	; TODO: move stack? do this inline to avoid stack issues
-	; Once we start loading, we destroy high memory.
-	lxi	h,cpnos+recs	; HL=source of data
-	lda	cpnos+comlen	; honor possible variations...
-	ora	a
-	jrz	bi1
-	add	a	; num records (128B)
-	mov	b,a
-	lda	cpnos+memtop
-	mov	d,a
-	mvi	e,0	; DE=destination (backwards)
-	mov	a,b
-	lxi	b,-128
-	xchg
-	dad	b
-	xchg
-	; A = count
-bi3:
-	lxi	b,128	; 128B at a time
-	ldir
-	dcr	d	; DE + 128 - 256
-	dcr	a
-	jrnz	bi3
-bi1:
-	lda	cpnos+bnklen	; honor possible variations...
-	ora	a
-	jz	bi2
-	; never used for CP/NOS?
-	add	a	; num records (128B)
-	mov	b,a
-	lda	cpnos+bnktop
-	mov	d,a
-	mvi	e,0	; DE=destination (backwards)
-	mov	a,b
-	lxi	b,-128
-	xchg
-	dad	b
-	xchg
-	; A = count
-bi4:
-	lxi	b,128	; 128B at a time
-	ldir
-	dcr	d	; DE + 128 - 256
-	dcr	a
-	jrnz	bi4
-bi2:	; TODO: if we loaded nothing, DON'T JUMP
-	; CP/NOS BIOS will reset mmu$cbar
-	lhld	cpnos+cfgtab
-	mov	a,h
-	ora	l
-	jrz	bi5
-	mvi	b,16+2	; A:-P:,CON:,LST:
-	pop	psw	; SID
-	mov	c,a	; C=SID
-	inx	h
-	inx	h
-bi7:	bit	7,m
-	inx	h
-	jrz	bi6
-	mov	a,m
-	cpi	0ffh
-	jrnz	bi6
-	mov	m,c
-bi6:	inx	h
-	djnz	bi7
-bi5:	lhld	cpnos+entry
-	pchl
-else
-	; TODO: parse optional string...
-	sta	boot$server
+bn8:	sta	boot$server
 	push	d	; save line pointer
 	mvi	a,0ffh	; we don't know yet...
 	sta	client$id
@@ -864,7 +811,95 @@ netsr:
 netsre:	stc
 	ret
 	
-endif
+; inline boot image
+Binline:
+	lda	ibi
+	ora	a
+	jz	error
+	call	getaddr ;get server ID, ignore extra MSDs
+	jc	error	; error if invalid
+	bit	7,b	;test for no entry
+	mvi	a,0
+	jrnz	bi8	;use 00
+	mov	a,l
+bi8:	push	psw	; cannot use RAM to save this...
+	call	crlf
+	; for now, no options, entire image in memory (ROM).
+	; but, need to reveal image using mmu$bbr.
+	; slide window up to 32K boundary
+	; Must not use RAM (at 2000h) after this...
+	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
+	out0	a,mmu$cbar
+	lxi	h,cpnos+ldmsg
+	call	print
+	; TODO: move stack? do this inline to avoid stack issues
+	; Once we start loading, we destroy high memory.
+	lxi	h,cpnos+recs	; HL=source of data
+	lda	cpnos+comlen	; honor possible variations...
+	ora	a
+	jrz	bi1
+	add	a	; num records (128B)
+	mov	b,a
+	lda	cpnos+memtop
+	mov	d,a
+	mvi	e,0	; DE=destination (backwards)
+	mov	a,b
+	lxi	b,-128
+	xchg
+	dad	b
+	xchg
+	; A = count
+bi3:
+	lxi	b,128	; 128B at a time
+	ldir
+	dcr	d	; DE + 128 - 256
+	dcr	a
+	jrnz	bi3
+bi1:
+	lda	cpnos+bnklen	; honor possible variations...
+	ora	a
+	jz	bi2
+	; never used for CP/NOS?
+	add	a	; num records (128B)
+	mov	b,a
+	lda	cpnos+bnktop
+	mov	d,a
+	mvi	e,0	; DE=destination (backwards)
+	mov	a,b
+	lxi	b,-128
+	xchg
+	dad	b
+	xchg
+	; A = count
+bi4:
+	lxi	b,128	; 128B at a time
+	ldir
+	dcr	d	; DE + 128 - 256
+	dcr	a
+	jrnz	bi4
+bi2:	; TODO: if we loaded nothing, DON'T JUMP
+	; CP/NOS BIOS will reset mmu$cbar
+	lhld	cpnos+cfgtab
+	mov	a,h
+	ora	l
+	jrz	bi5
+	; fix-up CFGTBL server IDs ("FF" -> SID)
+	mvi	b,16+2	; A:-P:,CON:,LST:
+	pop	psw	; SID
+	mov	c,a	; C=SID
+	inx	h
+	inx	h
+bi7:	bit	7,m
+	inx	h
+	jrz	bi6
+	mov	a,m
+	cpi	0ffh
+	jrnz	bi6
+	mov	m,c
+bi6:	inx	h
+	djnz	bi7
+bi5:	lhld	cpnos+entry
+	pchl
 
 *********************************************************
 **  Utility subroutines
@@ -1052,14 +1087,13 @@ decot1:
 	mov	c,a
 	jmp	conout
 
-if NOT inline$boot
 	include	snios.asm
-endif
 
-	rept	2000h-$
+	$-macro
+	rept	romsiz-$
 	db	0ffh
 	endm
-if	($ <> 2000h)
+if	($ <> romsiz)
 	.error 'core ROM overrun'
 endif
 cpnos:	ds	0	; cpnos.sys appended here...
