@@ -52,6 +52,7 @@ mincpm.tgz: __FRC__
 ship:
 	rsync -Wuv \
 		VirtualMinCpm.jar \
+		z80cpu/z80cpu.tgz \
 		~/git/heathkit/h89/v89/CpnetSerialServer.jar \
 		../bin
 
