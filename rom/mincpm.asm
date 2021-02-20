@@ -14,6 +14,8 @@ romsiz	equ	1000h	; minimum space for ROM
 false	equ	0
 true	equ	not false
 
+tdebug	equ	false
+
 	include	config.lib
 
 	$*macro
@@ -314,17 +316,17 @@ conine:
 recvbt:
 	push	d
 	push	b
-	mvi	d,20	; 20x = 3.1 seconds
+	mvi	d,20	; 20x = 3.1 seconds (5.6 seconds)
 coni0:	; loop = 156mS
-	lxi	b,0		; 65536 * 44 = 2883584
-coni1:
-	in0	a,stat		; 12
-	ani	10000000b	;  6
-	jrnz	coni2		;  6 (n)
-	dcx	b		;  4
-	mov	a,b		;  4
-	ora	c		;  4
-	jrnz	coni1		;  8 (t) = 44
+	lxi	b,0	; 65536* = 2883584 = 5177344
+coni1:				; 0-wait    3-wait
+	in0	a,stat		; 12        21?
+	ani	10000000b	;  6        12
+	jrnz	coni2		;  6n       12n
+	dcx	b		;  4        7
+	mov	a,b		;  4        7
+	ora	c		;  4        7
+	jrnz	coni1		;  8t = 44  14t = 80
 	dcr	d
 	jrnz	coni0
 	pop	b
@@ -421,6 +423,10 @@ comnds:
 	dw	Qcomnd
 	db	'B'
 	dw	Bcomnd
+if tdebug
+	db	'C'
+	dw	Ccomnd
+endif
 	db	'D'
 	dw	Dcomnd
 	db	'S'
@@ -714,6 +720,16 @@ Vcomnd:
 	call	msgprt
 	lxi	h,vernum
 	jmp	msgprt
+
+if tdebug
+Ccomnd:
+	call	crlf
+	mvi	a,1	; reset/clear
+cc0:	out	0ffh
+	call	recvbt
+	jrc	cc0	; A=0 from recvbt/CY
+	ret
+endif
 
 ; Boot
 ; currently, boot image is at 'cpnos'.

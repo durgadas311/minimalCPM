@@ -266,7 +266,20 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 	public int inPort(int port) {
 		return 0xff;
 	}
+
+	private long lastT = 0;
+	private long lastC = 0;
 	public void outPort(int port, int value) {
+		if ((port & 0xff) != 0xff) return;
+		// CPU timing debug
+		long t = System.nanoTime();
+		if (value == 0) {
+			System.err.format("FF: %dc, %dt\n", clock - lastC, t - lastT);
+		} else {
+			System.err.format("FF: -----\n");
+		}
+		lastT = t;
+		lastC = clock;
 	}
 	public void changeSpeed(int mlt, int div) {
 		int spd = (sysSpeed * mlt) / div;
