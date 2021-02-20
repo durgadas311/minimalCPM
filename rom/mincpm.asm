@@ -45,6 +45,10 @@ dstat	equ	30h
 dmode	equ	31h
 dcntl	equ	32h
 rcr	equ	36h
+if z180s
+cmr	equ	1eh
+ccr	equ	1fh
+endif
 
 ; ASCI0 registers
 ctla	equ	00h
@@ -158,6 +162,15 @@ init:
 	bit	7,a
 	jnz	trap
 init0:
+if z180s
+	mvi	a,xtal	; includes clock divide bit...
+	out0	a,ccr
+if ovrclk
+	; might have custom XTAL settings...
+	mvi	a,10000000b
+	out0	a,cmr
+endif
+endif
 	; map ROM at 0000-1FFF, RAM at 2000-FFFF (pa 80000)
 	; Use CA0 for ROM (hard-coded to pa 00000),
 	; and BA for RAM at pa 80000.

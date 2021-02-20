@@ -1,9 +1,13 @@
 ; Config file for SC203 and compatible platforms
 ; CPU clock = 18.432 MHz.
-; Z80180 CPU.
+; Z80S180 CPU.
 
 z180	equ	true
-z180s	equ	false
+z180s	equ	true
+
+xtal	equ	10000000b	; TODO: custom XTAL settings?
+; do not overclock at 18MHz
+ovrclk	equ	false
 
 ; Settings for 115200 baud at 18.432MHz
 asc$ss	equ	00000$000b	; SS0-2, divide by 1
