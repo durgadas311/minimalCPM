@@ -353,6 +353,7 @@ public class Z180ASCI implements ComputerIO {
 			reg_ctlb = ctlb_baud | ctlb_cts; // EXT clock, CTS off, by default
 			reg_stat = stat_tdre | stat_dcd; // TDRE on, DCD off, by default
 			reg_asxt = 0;
+			reg_tc = 0;
 			prescale = false;
 			// TODO: update other bits?
 			wait.release();
@@ -530,6 +531,9 @@ public class Z180ASCI implements ComputerIO {
 				reg_ctla, reg_ctlb, prescale);
 			ret += String.format("  STAT = %02x ASEXT = %02x\n",
 				reg_stat, reg_asxt);
+			if (z180s) {
+				ret += String.format("  ASTC = %d\n", reg_tc);
+			}
 			ret += String.format(" %d bits, %d baud, %d nS/char\n",
 						bits, baud, nanoBaud);
 			if (io != null) {
