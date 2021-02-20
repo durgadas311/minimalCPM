@@ -14,6 +14,7 @@ import z80core.*;
 // A19 selects RAM/ROM...
 public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 	private Z180 cpu;
+	private boolean z180s;
 	private long clock;
 	private Memory mem;
 	private Z180ASCI asci;
@@ -26,6 +27,7 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 	private int traceHigh;
 	private Vector<ClockListener> clks;
 	private Vector<TimeListener> times;
+	private int sysSpeed = 18432000;
 	private int cpuSpeed = 18432000;
 	private int extSpeed1 = 0;
 	private int extSpeed2 = 0;
@@ -64,10 +66,12 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 		} else {
 			System.err.format("Using configuration from %s\n", s);
 		}
-		s = props.getProperty("cpu_speed");
+		s = props.getProperty("cpu");
+		z180s = (s != null && s.equalsIgnoreCase("Z80S180"));
+		s = props.getProperty("sys_speed");
 		if (s != null) {
-			int c = getSpeed("cpu_speed", s);
-			if (c != 0) cpuSpeed = c;
+			int c = getSpeed("sys_speed", s);
+			if (c != 0) sysSpeed = c;
 		}
 		s = props.getProperty("ext_speed1");
 		if (s != null) {
@@ -84,9 +88,10 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 			int c = getSpeed("ext_speed3", s);
 			if (c != 0) extSpeed3 = c;
 		}
+		setCpuSpeed(sysSpeed);
 		// Now build hardware...
-		asci = new Z180ASCI(props, this);
-		cpu = new Z180(this, asci);
+		asci = new Z180ASCI(props, this, z180s);
+		cpu = new Z180(this, asci, z180s);
 		mem = new SimpleRAM_ROM(props);
 		disas = new Z180DisassemblerMAC80(mem, cpu);
 
@@ -103,6 +108,13 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 		if (s != null) {
 			dbg = new StdioDebugger(props, this);
 		}
+	}
+
+	private void setCpuSpeed(int spd) {
+		cpuSpeed = spd;
+		cpuCycle1ms = spd / 1000;
+		long n = (long)1000000000 / spd;
+		nanoSecCycle = (int)n;
 	}
 
 	private int getSpeed(String p, String s) {
@@ -122,6 +134,7 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 
 	///////////////////////////////
 	// BaseSystem implementation //
+	public int sysClock() { return sysSpeed; }
 	public int cpuClock() { return cpuSpeed; }
 	public int extClock1() { return extSpeed1; }
 	public int extClock2() { return extSpeed2; }
@@ -254,6 +267,14 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 		return 0xff;
 	}
 	public void outPort(int port, int value) {
+	}
+	public void changeSpeed(int mlt, int div) {
+		int spd = (sysSpeed * mlt) / div;
+		setCpuSpeed(spd);
+		// notify all interested parties...
+		asci.newSpeed();
+		// TODO: how to fix execute() loop timing...
+		// will catch up at next 1mS break.
 	}
 
 	// no longer called
@@ -446,7 +467,8 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 	}
 
 	public String dumpDebug() {
-		String ret = String.format("CPU clock = %gMHz\n", (double)cpuSpeed / 1e6);
+		String ret = String.format("System clock = %gMHz\n", (double)sysSpeed / 1e6);
+		ret += String.format("CPU clock = %gMHz\n", (double)cpuSpeed / 1e6);
 		ret += String.format("CKA0 clock = %gMHz\n", (double)extSpeed1 / 1e6);
 		ret += String.format("CKA1 clock = %gMHz\n", (double)extSpeed2 / 1e6);
 		ret += String.format("CKS clock = %gMHz\n", (double)extSpeed3 / 1e6);

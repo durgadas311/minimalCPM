@@ -62,11 +62,10 @@ public class Z180ASCI implements ComputerIO {
 	private Z180ASCIChan[] ports = new Z180ASCIChan[2];
 	private boolean z180s;
 
-	public Z180ASCI(Properties props, BaseSystem sys) {
+	public Z180ASCI(Properties props, BaseSystem sys, boolean z180s) {
 		this.sys = sys;
 		name = "Z180_ASCI";
-		String s = props.getProperty("cpu");
-		z180s = (s != null && s.equalsIgnoreCase("Z80S180"));
+		this.z180s = z180s;
 		ports[0] = new Z180ASCIChan(props, "asci0", 0, null);
 		ports[1] = new Z180ASCIChan(props, "asci1", 1, ports[0]);
 		reset();
@@ -105,6 +104,11 @@ public class Z180ASCI implements ComputerIO {
 	public void reset() {
 		ports[0].reset();
 		ports[1].reset();
+	}
+
+	public void newSpeed() {
+		ports[0].newSpeed();
+		ports[1].newSpeed();
 	}
 
 	public String getDeviceName() {
@@ -255,6 +259,10 @@ public class Z180ASCI implements ComputerIO {
 			if (!z180s) return;
 			reg_tc = val;
 			recalcBaud();	// if BRG=1
+		}
+
+		public void newSpeed() {
+			recalcBaud();
 		}
 
 		// 'port' has been shifted! 0-4, 9
