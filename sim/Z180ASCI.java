@@ -535,6 +535,8 @@ public class Z180ASCI implements ComputerIO {
 		public String dumpDebug() {
 			String ret = new String();
 			ret += String.format("--- %s-%c ---\n", name, index + '0');
+			ret += String.format(" fifo=%d fifi=%d\n",
+						fifo.size(), fifi.size());
 			ret += String.format(" CNTLA = %02x CNTLB = %02x PS=%s\n",
 				reg_ctla, reg_ctlb, prescale);
 			ret += String.format("  STAT = %02x ASEXT = %02x\n",
