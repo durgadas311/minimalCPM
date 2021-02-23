@@ -14,6 +14,12 @@ quit	Exit the simulation. Typically, a ^C will have the same effect.
 dump cpu
 	Print information about the current CPU state.
 
+dump mach
+	Print information about the current machine state.
+
+dump asci
+	Print information about the current ASCI state.
+
 dump page XX
 	Dump memory page XX, in the context of the current system
 	state. This is a "virtual" or logical CPU page address in the
@@ -24,7 +30,7 @@ dump core <file>
 	Dump all of memory to the specified file. The dump will be
 	sparse, with the memory chunks physically residing at their
 	physical addresses. The ROM will begin at byte 0x00000 of the
-	file, and RAM will begin at byt 0x80000 of the file.
+	file, and RAM will begin at byte 0x80000 of the file.
 
 trace off
 	Turn off, stop, disable, any previously set tracing.
