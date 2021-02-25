@@ -31,6 +31,7 @@ public class TtySerial implements SerialDevice, Runnable {
 	OutputStream out;
 	int flowCtrl = SerialPort.FLOW_CONTROL_DISABLED;
 	boolean modem = false;
+	private boolean nodtr = false;
 	int mdms = -1;
 
 	public TtySerial(Properties props, Vector<String> argv, VirtualUART uart) {
@@ -52,6 +53,8 @@ public class TtySerial implements SerialDevice, Runnable {
 					arg.equalsIgnoreCase("xoff/xon")) {
 				flowCtrl = SerialPort.FLOW_CONTROL_XONXOFF_IN_ENABLED |
 					SerialPort.FLOW_CONTROL_XONXOFF_OUT_ENABLED;
+			} else if (arg.equalsIgnoreCase("nodtr")) {
+				nodtr = true;
 			}
 		}
 		if (tty == null) {
@@ -66,6 +69,9 @@ public class TtySerial implements SerialDevice, Runnable {
 			out = comm.getOutputStream();
 		} catch (Exception ee) {
 			throw ee;
+		}
+		if (nodtr) {
+			comm.setDTR();
 		}
 		uart.attachDevice(this);
 		if (!modem) {
@@ -146,10 +152,12 @@ public class TtySerial implements SerialDevice, Runnable {
 		} else {
 			comm.setRTS();
 		}
-		if ((mdm & VirtualUART.GET_DTR) == 0) {
-			comm.clearDTR();
-		} else {
-			comm.setDTR();
+		if (!nodtr) {
+			if ((mdm & VirtualUART.GET_DTR) == 0) {
+				comm.clearDTR();
+			} else {
+				comm.setDTR();
+			}
 		}
 	}
 	public int dir() { return SerialDevice.DIR_OUT; }

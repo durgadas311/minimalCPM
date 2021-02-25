@@ -181,6 +181,7 @@ public class Z180ASCI implements ComputerIO {
 						name, index + '0');
 				}
 			} catch (Exception ee) {
+				//ee.printStackTrace();
 				System.err.format("Invalid class in attachment: %s\n", s);
 				return;
 			}

@@ -1,0 +1,13 @@
+# Minimal CP/M system simulation running CpnetSerialServer
+# Using real TTY device for console
+cpu = Z80S180
+ram_size = 64k
+rom_size = 32k
+monitor_rom = mincpm-nb.rom
+#trace = trace cycles 1000
+#trace = trace pc ED00 FFFF
+#log = vmincpm-tty.log
+debugger
+
+# Connect to a real TTY device - Z180 ASCI has no DTR
+asci0_att = TtySerial tty=/dev/ttyUSB1,115200 modem RTS/CTS noDTR
