@@ -82,6 +82,9 @@ client$id	ds	1
 		ds	36	; not used
 		ds	1	; not used
 msgbuf:		ds	5+256
+		ds	256
+nbstk:		ds	0
+ibstk	equ	8000h+256
 
 ; offsets in msgbuf
 FMT	equ	0
@@ -405,7 +408,7 @@ cci0:	cmp	m		;search command table
 	inx	h		;step past routine address
 	inx	h
 	djnz	cci0		;loop untill all valid commands are checked
-error	lxi	h,errm		;if command unknown, beep and re-prompt
+error:	lxi	h,errm		;if command unknown, beep and re-prompt
 	jmp	msgprt
 
 gotocmd:
@@ -742,6 +745,10 @@ Bcomnd:
 	jz	Binline
 	; network boot command
 	dcx	d	; ungetc()
+	; transition to nbstk...
+	pop	h
+	lxi	sp,nbstk
+	push	h
 bn7:	call	getaddr ;get server ID, ignore extra MSDs
 	jc	error	; error if invalid
 	bit	7,b	;test for no entry
@@ -804,6 +811,7 @@ loop:
 	dcr	a
 	jnz	error	; unsupported function
 	; done - execute boot code
+	call	crlf
 	lhld	msgbuf+DAT
 	pchl	; jump to code...
 load:	lhld	dma
@@ -845,6 +853,10 @@ Binline:
 	lda	ibi
 	ora	a
 	jz	error
+	; transition to ibstk...
+	pop	h
+	lxi	sp,ibstk
+	push	h
 	call	getaddr ;get server ID, ignore extra MSDs
 	jc	error	; error if invalid
 	bit	7,b	;test for no entry
@@ -927,7 +939,9 @@ bi7:	bit	7,m
 	mov	m,c
 bi6:	inx	h
 	djnz	bi7
-bi5:	lhld	cpnos+entry
+bi5:
+	call	crlf
+	lhld	cpnos+entry
 	pchl
 
 *********************************************************
