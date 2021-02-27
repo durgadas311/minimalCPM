@@ -1,5 +1,5 @@
 ; ROM monitor/boot for Minimal CP/M System
-VERN	equ	007h	; ROM version
+VERN	equ	008h	; ROM version
 
 romsiz	equ	1000h	; minimum space for ROM
 
@@ -171,7 +171,7 @@ if z180s
 	mvi	a,xtal	; includes clock divide bit...
 	out0	a,ccr
 if ovrclk
-	; might have custom XTAL settings...
+	; might depend on custom XTAL settings...
 	mvi	a,10000000b
 	out0	a,cmr
 endif
@@ -192,7 +192,12 @@ endif
 	; CPU init:
 	xra	a	; refresh off... static RAM
 	out	rcr
-	; TODO: init/optimize memory WAIT...
+	; init/optimize memory WAIT...
+	in0	a,dcntl
+	ani	00$111111b	; erase current mem WAIT
+	ori	mwait		; replace with desired
+	out0	a,dcntl
+	;
 	call	coninit
 	call	meminit
 	lxi	h,signon
@@ -246,17 +251,27 @@ conot1:
 ; ctlb: SS=div1, DR=0(16x), PS=1
 ; stat: RIE=0, TIE=0 (no interrupts)
 ; asxt: BRG=0(div10 if DR=0), X1=0
-; TODO: customize baud settings for CPU speed
+; TODO: does order matter?
 coninit:
-	mvi	a,01100100b	; TE/RE, 8+n+1
+	; disable Tx/Rx until initialized
+	mvi	a,00010100b	; dis Tx/Rx, 8+n+1, RTS off
 	out0	a,ctla
 	mvi	a,00000000b+asc$ps+asc$dr
 	out0	a,ctlb
 	mvi	a,00000000b	; ...
 	out0	a,stat
-	mvi	a,01100110b+asc$brg	; DCD/CTS, BREAK enable
+	mvi	a,01100110b+asc$brg	; DCD/CTS, BREAK enable TODO: cts/dcd ena?
 	out0	a,asxt
 	; TODO: what else...
+if z180s
+if astc
+	lxi	h,astc
+	out0	l,astcl
+	out0	h,astch
+endif
+endif
+	mvi	a,01101100b	; TE/RE, 8+n+1, RTS on, EFR
+	out0	a,ctla
 	ret
 
 ; DMA 00000... into 80000... (8K)

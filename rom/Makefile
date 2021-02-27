@@ -1,6 +1,10 @@
 PLAT = sc203
 
-all: mincpm-$(PLAT).rom
+all:
+	$(MAKE) rom PLAT=sc203
+	$(MAKE) rom PLAT=minz
+
+rom: mincpm-$(PLAT).rom
 
 %-$(PLAT).rom: zout/%.cim
 	cp $< $@

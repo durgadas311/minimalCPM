@@ -1,0 +1,19 @@
+; Config file for MinZ platforms
+; CPU clock = 16.667 MHz, overclocked to 33.334MHz
+; Z80S180 CPU.
+
+z180	equ	true
+z180s	equ	true
+
+xtal	equ	10010111b	; 1X, "low noise drives"
+ovrclk	equ	true
+mwait	equ	11$000000b	; Memory wait states needed
+
+; Settings for 115200 baud at 33.334MHz
+asc$ss	equ	00000$000b	; SS0-2, divide by 1 (*)
+asc$ps	equ	00$0$00000b	; PS=0: divide by 10 (*)
+asc$dr	equ	0000$0$000b	; DR=0: divide by 16
+asc$brg	equ	0000$1$000b	; BRG=1: PS/SS0-2 ignored
+astc	equ	0007h		; non-zero means set value
+				; baud = phi / (2 * (2 + astc))
+				; 33.334MHz/18/16 = 115743 baud (~115200)
