@@ -15,15 +15,24 @@ public class TelnetSerial implements SerialDevice, Runnable {
 	String dbg;
 	InputStream inp;
 	OutputStream out;
-	boolean modem;
+	boolean modem = false;
+	boolean nodtr = false;
 
 	public TelnetSerial(Properties props, Vector<String> argv, VirtualUART uart) {
 		this.uart = uart;
-		if (argv.size() < 3 || argv.size() > 4) {
+		if (argv.size() < 3 || argv.size() > 5) {
 			System.err.format("TelnetSerial: Invalid args\n");
 			return;
 		}
-		modem = (argv.size() > 3 && argv.get(3).equalsIgnoreCase("modem"));
+		if (argv.size() > 3) {
+			for (int x = 3; x < argv.size(); ++x) {
+				if (argv.get(x).equalsIgnoreCase("modem")) {
+					modem = true;
+				} else if (argv.get(x).equalsIgnoreCase("nodtr")) {
+					nodtr = true;
+				}
+			}
+		}
 		String host = argv.get(1);
 		int port = Integer.valueOf(argv.get(2));
 		dbg = String.format("TelnetSerial %s %d\n", host, port);
@@ -128,14 +137,13 @@ public class TelnetSerial implements SerialDevice, Runnable {
 
 	// Should not get here unless conn == null...
 	private void tryConn(Socket nc) {
-// TODO: any feedback possible here? no DTR exists...
-//		if (conn != null || modem &&
-//			(uart.getModem() & VirtualUART.GET_DTR) == 0) {
-//			try {
-//				nc.close();
-//			} catch (Exception ee) {}
-//			return;
-//		}
+		if (conn != null || (modem && !nodtr &&
+			(uart.getModem() & VirtualUART.GET_DTR) == 0)) {
+			try {
+				nc.close();
+			} catch (Exception ee) {}
+			return;
+		}
 		conn = nc;
 		try {
 			InetAddress ia = conn.getInetAddress();

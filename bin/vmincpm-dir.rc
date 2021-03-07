@@ -6,7 +6,7 @@
 #log = vmincpm.log
 
 # Alternate use with a "telnet" console:
-#asci0_att = TelnetSerial 192.168.1.17 31123 modem
+#asci0_att = TelnetSerial 192.168.1.17 31123 modem nodtr
 # no log needed, but optional
 
 # These are defaults

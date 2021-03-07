@@ -20,7 +20,7 @@ monitor_rom = mincpm.rom
 # "conf=" must reference _this_ file.
 asci0_att = ProgramSerial serialserver conf=vmincpm.rc log=clientF0.log
 # These are CpnetSerialServer.jar properties:
-cpnet_console = TelnetSerial 192.168.1.17 31123 modem
+cpnet_console = TelnetSerial 192.168.1.17 31123 modem nodtr
 cpnet_console_oob
 cpnet_tty = stdio
 cpnet_cid = f0

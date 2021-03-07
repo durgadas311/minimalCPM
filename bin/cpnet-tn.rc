@@ -1,0 +1,20 @@
+# Example CpnetSerialServer config for use with real serial port
+
+# Set appropriate host and port values:
+cpnet_console = TelnetSerial 192.168.1.17 31123 modem nodtr
+cpnet_console_oob
+# Set appropriate TTY and BAUD values:
+cpnet_tty = /dev/ttyUSB0 115200
+# Optionally modify CP/NET requestor ID:
+cpnet_cid = f0
+# Setup path to top-level CP/NET directories:
+cpnet_server00 = HostFileBdos /path/to/MinCPM
+cpnet_protocol = dri
+dri_ack_timeout = 100
+dri_char_timeout = 100
+cpnet_flow_control = rts/cts
+
+# Setup desired network boot path and default:
+netboot_dir = /path/to/MinCPM
+netboot_default = cpnos.sys
+netboot_org0 = none
