@@ -9,6 +9,9 @@ rom: mincpm-$(PLAT).rom
 %-$(PLAT).rom: zout/%.cim
 	cp $< $@
 
+netboot.com: zout/netboot.cim
+	cp $< $@
+
 config.lib: $(PLAT).lib __FRC__
 	cp $< $@
 
