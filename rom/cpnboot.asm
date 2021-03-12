@@ -1,4 +1,4 @@
-; Runs under CP/M, takes over the console and network boots CP/NOS.
+; Runs under CP/M, boots using ASCI1 and the "loader" style
 
 	maclib	z180
 
@@ -80,11 +80,16 @@ syntax:
 	lxi	h,netsyn
 	jr	err0
 
-signon:	db	' Network Boot',CR,LF,'$'
+signon:	db	' Network Loader',CR,LF,'$'
 cpnet:	db	CR,LF,BEL,'CP/NET is already running',CR,LF,'$'
 netsyn:	db	CR,LF,BEL,'Netboot syntax error',CR,LF,'$'
 neterr:	db	CR,LF,BEL,'Network boot error',CR,LF,'$'
 
+defmap:
+	db	0x80,0	; A:=A:
+	db	0x80,17	; LST:=0
+	db	0
+	; TODO: allow customization of maps
 boot:
 	; make certain line is NUL-terminated.
 	lxi	h,cmdlin
@@ -111,14 +116,40 @@ bn8:	sta	boot$server
 	jnz	error
 
 	lxi	h,msgbuf+DAT
+	mvi	b,2	; always two bytes
+	; fill in basics...
+	lda	retcpm+2
+	mov	m,a	; BIOS page
+	inx	h
+	lda	bdos+2
+	mov	m,a	; BDOS page
+	inx	h
+	lxix	defmap
+nm1:	ldx	a,+0
+	ora	a
+	jrz	nm0
+	mov	m,a
+	inx	h
+	ldx	a,+1
+	mov	m,a
+	inx	h
+	inr	b
+	inr	b
+	inxix
+	inxix
+	jr	nm1
+nm0:
+	; TODO: also for LST:...
+	push	h	; save start of string
+	; now pass string, if present
 	mvi	m,0	; len, re-set later
 	inx	h
-	mvi	c,1	; incl. len and NUL
+	mvi	c,2	; strlen incl. len and NUL
 bn1:
 	call	char
 	jrz	bn2	; no string present
 	cpi	' '
-	jrz	bn1
+	jrz	bn1	; skip leading blanks
 bn0:	mov	m,a
 	inx	h
 	inr	c
@@ -126,10 +157,14 @@ bn0:	mov	m,a
 	jrnz	bn0	; copy whole string... can't exceed 128?
 bn2:	mvi	m,0	; NUL term
 	mov	a,c	; SIZ incl NUL
+	add	b	; previous header bytes
+	dcr	a	; SIZ is N-1
 	sta	msgbuf+SIZ
-	dcr	a
-	sta	msgbuf+DAT
-	mvi	a,1
+	mov	a,c
+	dcr	a	; len is without len byte
+	pop	h	; len byte of string...
+	mov	m,a
+	mvi	a,2	; FNC=2 is loader boot style
 	sta	msgbuf+FNC
 loop:
 	lda	boot$server
@@ -260,7 +295,7 @@ print:	mov	a,m	; BDOS func 9 style msgprt
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; TODO: allow selection of hardware
-	include	nb-z180-asci0.asm
+	include	nb-z180-asci1.asm
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;; SNIOS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
