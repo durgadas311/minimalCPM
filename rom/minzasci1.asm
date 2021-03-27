@@ -1,12 +1,14 @@
-; NETBOOT I/O module for Z180 ASCI1
+; NETBOOT I/O module for Z180 ASCI1 on MinZ
 
-; already done when included...
-;	maclib	z180
+	public	check,sendby,recvbt,recvby
+	public	descr
+
+	maclib	z180
 ;
-;false	equ	0
-;true	equ	not false
+false	equ	0
+true	equ	not false
 ;
-;	$*macro
+	$*macro
 
 ; Z180 ASCI1 registers - only enough for I/O
 ctlb	equ	03h	; for CTS
@@ -17,20 +19,13 @@ rdr	equ	09h
 cntr	equ	0ah
 trdr	equ	0bh
 
-; TODO: manage this in platform-specific modules...
-;	public	init,conout
-;	; exported for SNIOS
-;	public	recvbt,recvby,sendby
-; Or:	include	chario.asm
-;
-; Extry:	init,deinit,conin,conout,
-;		sendby,recvbt,recvby,putfifo
-
-iovers:	db	'Z180-ASCI1$'
+	dseg
+descr:	db	'MinZ Z180-ASCI1',0
 stat0:	db	0
+	cseg
 
-; make certain the console interrupts are off...
-init:
+; TODO: full (re)init of port
+check:
 	di
 	; The only bits that are writeable
 	; are the ones we zero... but we'll
@@ -51,41 +46,6 @@ init:
 	ei
 	ret
 
-deinit:
-	di
-	; TODO: should we turn off RTS?
-	mvi	a,0ffh	; high = inactive for /RTS
-	out0	a,trdr
-	mvi	a,10h	; transmit enable (send byte)
-	out0	a,cntr
-	lda	stat0
-	out0	a,stat
-	ei
-	ret
-
-;;;;; not used here? ;;;;;
-; Get char from console
-; Returns: A=char, stripped
-conin:	in0	a,stat
-	ani	10000000b	; RDRF
-	jrz	conin
-	in0	a,rdr
-	ani	07fh
-	ret
-	
-; Output char to console (not ASCI1!)
-; Preserves HL for 'print' caller.
-; C=char
-conout:
-	push	h
-	lhld	1
-	mvi	l,12	; conout vector
-	call	icall
-	pop	h
-	ret
-
-icall:	pchl
-
 sendby:	push	psw
 sendb1:
 	in0	a,ctlb
@@ -98,9 +58,7 @@ sendb1:
 	out0	a,tdr
 	ret
 
-; These are for SNIOS...
-
-; For CP/NET boot, wait long timeout for one char
+; For CP/NET boot, wait long timeout for first char
 ; Return: CY=timeout else A=char
 ; At 115200, one char is 1600 cycles...
 recvbt:
@@ -135,6 +93,4 @@ recvby:
 	mvi	d,2	; 2x = 312mS for next char
 	jr	coni0
 
-; Save stray conin characters...
-putcon:	; not used here, just discard...
-	ret
+	end

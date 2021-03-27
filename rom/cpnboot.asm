@@ -2,6 +2,9 @@
 
 	maclib	z180
 
+	extrn	NTWKIN,NTWKST,CNFTBL,SNDMSG,RCVMSG,NTWKER,NTWKBT,NTWKDN,CFGTBL
+	extrn	descr
+
 false	equ	0
 true	equ	not false
 
@@ -12,6 +15,7 @@ retcpm	equ	0
 bdos	equ	5
 cmdlin	equ	80h
 
+fcono	equ	2
 fprnt	equ	9
 fvers	equ	12
 
@@ -44,10 +48,10 @@ org0	equ	16	; not used(?)
 ldmsg	equ	128	; load map/message ('$' terminated)
 recs	equ	256	; records to load, top-down
 
-; Usage: NETBOOT [nid [args...]]
+; Usage: CPNBOOT [nid [args...]]
 
 	; CP/M TPA... where we live
-	org	00100h
+	cseg
 	lxi	sp,nbstk
 	mvi	c,fvers
 	call	bdos
@@ -60,20 +64,18 @@ recs	equ	256	; records to load, top-down
 	jmp	retcpm
 
 nocpn:	; CP/NET not running, OK to boot
-	lxi	d,iovers
+	lxi	d,descr
 	mvi	c,fprnt
 	call	bdos
 	lxi	d,signon
 	mvi	c,fprnt
 	call	bdos
-	call	init	; might impact error path return to CP/M...
 	jmp	boot
 
 error:
 	lxi	h,neterr
 err0:
 	call	print
-	call	deinit
 	jmp	retcpm
 
 syntax:
@@ -108,15 +110,13 @@ bn7:	call	getaddr ;get server ID, ignore extra MSDs
 	mov	a,l
 bn8:	sta	boot$server
 	push	d	; save line pointer
-	mvi	a,0ffh	; we don't know yet...
-	sta	client$id
-	call	NTWKIN	; trashes msgbuf...
+	call	NTWKIN
 	pop	d
 	ora	a
 	jnz	error
 
 	lxi	h,msgbuf+DAT
-	mvi	b,2	; always two bytes
+	mvi	b,2	; always at least two bytes
 	; fill in basics...
 	lda	retcpm+2
 	mov	m,a	; BIOS page
@@ -169,7 +169,7 @@ bn2:	mvi	m,0	; NUL term
 loop:
 	lda	boot$server
 	sta	msgbuf+DID
-	lda	client$id
+	lda	CFGTBL+1	; client$id
 	sta	msgbuf+SID
 	mvi	a,0xb0
 	sta	msgbuf+FMT
@@ -293,25 +293,23 @@ print:	mov	a,m	; BDOS func 9 style msgprt
 	inx	h
 	jr	print
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; TODO: allow selection of hardware
-	include	nb-z180-asci1.asm
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; TODO: need to make this work when booting over console...
+conout:
+	push	h
+	push	d
+	push	b
+	mov	e,c
+	mvi	c,fcono
+	call	bdos
+	pop	b
+	pop	d
+	pop	h
+	ret
 
-;;;;;;;; SNIOS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	include	snios.asm
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	
+	dseg
 ; variables to network boot CP/NOS
 boot$server	ds	1
-retry$count:	ds	1
-msg$adr:	ds	2
 dma:		ds	2
-CFGTBL		ds	0	; mimic CP/NET CFGTBL
-network$status:	ds	1
-client$id	ds	1
-		ds	36	; not used
-		ds	1	; not used
 msgbuf:		ds	5+256
 		ds	256
 nbstk:		ds	0

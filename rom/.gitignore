@@ -1,3 +1,6 @@
 zout
 *.rom
+*.com
+*.obj
+*.bin
 config.lib
