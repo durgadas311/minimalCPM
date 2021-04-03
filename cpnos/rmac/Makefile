@@ -1,7 +1,8 @@
 # Build for CPNOS
 # Requires unix2dos utility (e.g. 'dos2unix' package) and 'vcpm'.
 #
-export CPMDrive_D = $(PWD)
+# don't use ${PWD} because "make -C" breaks that.
+export CPMDrive_D = $(shell pwd)
 export CPMDefault = d:
 
 WIZBLD = /home/drmiller/cpnet-bld/w5500/mt011
@@ -34,7 +35,7 @@ cpnos.sys: cobdos.spr cobios.spr ndos.spr snios.spr
 
 cpnos-w.sys: cobdos.spr cobios.spr ndos.spr $(WIZSNIOS)
 	mknetboot -o $@ \
-		A:=A: \
+		x:=x: \
 		-ndos ndos.spr \
 		-snios $(WIZSNIOS) \
 		-bdos cobdos.spr \
