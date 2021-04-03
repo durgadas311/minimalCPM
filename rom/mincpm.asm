@@ -84,6 +84,7 @@ nbstk:		ds	0
 	ds	2	; identifiers
 	ds	2	; length (offset of next)
 	ds	2	; description offset
+command:	; for command modules
 NTWKIN:	ds	3
 NTWKST:	ds	3
 CNFTBL:	ds	3
@@ -413,6 +414,11 @@ cci0:	cmp	m		;search command table
 	inx	h		;step past routine address
 	inx	h
 	djnz	cci0		;loop untill all valid commands are checked
+	; check for added commands
+	mvi	h,'C'
+	mov	l,a
+	call	getmod
+	jnc	command
 error:	lxi	h,errm		;if command unknown, beep and re-prompt
 	jmp	msgprt
 
@@ -469,11 +475,13 @@ menu:
 	db	TRM
 
 btcm:	db	' <sid> [tag] - boot ',TRM
+cmsep:	db	' - ',TRM
 
 Qcomnd:
 	call	modmnu	; may print nothing
 	lxi	h,menu
-	jmp	msgprt
+	call	msgprt
+	jmp	cmdmnu	; may print nothing
 
 Mcomnd:	call	getaddr
 	jc	error
@@ -763,6 +771,44 @@ cc0:	out	0ffh
 	ret
 endif
 
+; print added command help based on modules
+cmdmnu:
+	; must map-in more of ROM...
+	in0	a,mmu$cbar
+	push	psw
+	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
+	out0	a,mmu$cbar
+	;
+	lxix	modules
+cm1:
+	ldx	c,+2
+	ldx	b,+3	; BC = length (next module)
+	ldx	a,+0
+	cpi	0ffh	; no more modules
+	jrz	cm9
+	cpi	'C'
+	jrnz	cm0
+	push	b
+	call	crlf
+	ldx	c,+1	; command char
+	call	conout
+	lxi	h,cmsep
+	call	msgprt
+	ldx	e,+4
+	ldx	d,+5	; DE = offset of description
+	pushix
+	pop	h
+	dad	d
+	call	msgprt
+	pop	b
+cm0:	dadx	b
+	jr	cm1
+
+cm9:	; restore memory map before returning
+	pop	psw
+	out0	a,mmu$cbar
+	ret
+
 ; print boot command help based on modules
 modmnu:
 	; must map-in more of ROM...
@@ -803,7 +849,7 @@ mm9:	; restore memory map before returning
 	out0	a,mmu$cbar
 	ret
 
-; search for boot module, L=char
+; search for boot module, L=char H=class
 getmod:
 	in0	a,mmu$cbar
 	push	psw
@@ -815,7 +861,7 @@ gm0:	ldx	c,+2	; never zero?
 	ldx	a,+0
 	cpi	0ffh	; no more modules
 	jrz	gm3
-	cpi	'N'
+	cmp	h
 	jrnz	gm1
 	ldx	a,+1
 	cmp	l
@@ -850,6 +896,7 @@ Bcomnd:
 bn7:
 	mov	l,a
 	push	d
+	mvi	h,'N'
 	call	getmod
 	pop	d
 	jc	error
@@ -891,13 +938,13 @@ bn2:	mvi	m,0
 	sta	msgbuf+SIZ
 	dcr	a
 	sta	msgbuf+DAT
+	mvi	a,1
+	sta	msgbuf+FNC
+loop:
 	lda	boot$server
 	sta	msgbuf+DID
 	lda	client$id
 	sta	msgbuf+SID
-	mvi	a,1
-	sta	msgbuf+FNC
-loop:
 	mvi	a,0xb0
 	sta	msgbuf+FMT
 	call	netsr	; send request, receive response

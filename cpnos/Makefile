@@ -1,4 +1,5 @@
-all: cpnos.sys
+all: cpnos.sys cpnos-w.sys
 
-cpnos.sys:
-	$(MAKE) -C rmac cpnos.sys
+# For some reason, "make -C" is not resulting in proper operation in vcpm.
+#%.sys:
+#	$(MAKE) -C rmac $@
