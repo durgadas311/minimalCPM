@@ -19,6 +19,19 @@ conout	equ	0040h
 conin	equ	0043h
 conine	equ	0046h
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; These defines should be in a common file...
+
+nsock	equ	8
+SOCK0	equ	000$01$000b
+SOCK1	equ	001$01$000b
+SOCK2	equ	010$01$000b
+SOCK3	equ	011$01$000b
+SOCK4	equ	100$01$000b
+SOCK5	equ	101$01$000b
+SOCK6	equ	110$01$000b
+SOCK7	equ	111$01$000b
+
 	cseg
 first:
 	db	'C','Z'
@@ -45,7 +58,7 @@ start:
 	lxi	h,nvbuf+32	; socket array area
 	mvi	d,SOCK0	; BSB 08h = Socket 0 Register Block
 	mvi	e,0	; offset +0
-	mvi	b,8	; num sockets
+	mvi	b,nsock
 save0:	push	b
 	mvi	b,48	; extended block
 	call	wizget	; HL=next block (socket)
@@ -61,7 +74,7 @@ save0:	push	b
 	call	dump
 	lxix	nvbuf+32
 	mvi	d,SOCK0
-	mvi	b,8	; number of sockets
+	mvi	b,nsock
 save2:
 	push	b
 	ldx	a,+4	; 0x31 if configured
@@ -153,19 +166,6 @@ hexdig:
 	daa
 	jmp	chrout
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; These defines should be in a common file...
-
-nsock	equ	8
-SOCK0	equ	000$01$000b
-SOCK1	equ	001$01$000b
-SOCK2	equ	010$01$000b
-SOCK3	equ	011$01$000b
-SOCK4	equ	100$01$000b
-SOCK5	equ	101$01$000b
-SOCK6	equ	110$01$000b
-SOCK7	equ	111$01$000b
-
 msgout:	ldax	d
 	ora	a
 	rz
@@ -184,6 +184,6 @@ chrout:	push	b
 stack:	ds	0
 savstk	dw	0
 
-nvbuf:	ds	512
+nvbuf:	ds	32+(8*48)
 
 	end
