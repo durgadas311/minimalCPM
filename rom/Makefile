@@ -26,7 +26,7 @@ rom: mincpm-$(PLAT).rom
 mincpm-minz.rom: zout/mincpm.cim auxminz.obj end.bin
 	cat $^ >$@
 
-mincpm-sc203.rom: zout/mincpm.cim conmod.obj wizmod.obj wcfmod.obj end.bin
+mincpm-sc203.rom: zout/mincpm.cim conmod.obj wizmod.obj wcfmod.obj wdbmod.obj end.bin
 	cat $^ >$@
 
 # CPNETLDR but over the network
@@ -61,6 +61,9 @@ auxminz.obj: zout/auxmod.rel $(SERSNIOS) zout/minzasci1.rel zout/plug.rel
 	ld80 -O obj -o $@ -P 0x3000 $^
 
 wcfmod.obj: zout/wcfmod.rel $(WIZLIB) zout/plug.rel
+	ld80 -O obj -o $@ -P 0x3000 $^
+
+wdbmod.obj: zout/wdbmod.rel $(WIZLIB) zout/plug.rel
 	ld80 -O obj -o $@ -P 0x3000 $^
 
 ship:

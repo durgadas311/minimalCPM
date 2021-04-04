@@ -1,6 +1,6 @@
 ; ROM monitor/boot for Minimal CP/M System.
 ; total size of ROM+modules must not exceed 32K
-VERN	equ	010h	; ROM version
+VERN	equ	011h	; ROM version
 
 romsiz	equ	1000h	; minimum space for ROM
 
