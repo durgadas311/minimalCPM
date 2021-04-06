@@ -1,6 +1,6 @@
 ; ROM monitor/boot for Minimal CP/M System.
 ; total size of ROM+modules must not exceed 32K
-VERN	equ	011h	; ROM version
+VERN	equ	012h	; ROM version
 
 romsiz	equ	1000h	; minimum space for ROM
 
@@ -85,7 +85,7 @@ nbstk:		ds	0
 	ds	2	; length (offset of next)
 	ds	2	; description offset
 command:	; for command modules
-NTWKIN:	ds	3
+NTWKIN:	ds	3	; for netboot (SNIOS) modules...
 NTWKST:	ds	3
 CNFTBL:	ds	3
 SNDMSG:	ds	3
@@ -268,19 +268,22 @@ endif
 ; DMA 00000... into 80000... (8K)
 ; i.e. copy core ROM (8K) into RAM using DMAC
 dmarom:
-	lxi	h,0000h	; page addr (256B)
-	lxi	d,0800h	; page addr (256B)
+	mvi	h,0	; src is ROM bank
+	mvi	l,80h	; dst is RAM bank
+	lxix	0000h	; 
+	lxi	d,0000h	;
 	lxi	b,2000h	; bytes
 ; Generic memcpy using DMAC.
-; HL=src, DE=dst, all units 256B "pages".
-; BC=count, units are bytes
+; H=src hi, L=dst hi, IX=src lo, DE=dst lo, BC=count, units are bytes
+; destroys DE
 dmacpy:
-	xra	a
-	out0	a,dar0l	; (256B page boundary)
-	out0	e,dar0h ;
-	out0	d,dar0b	; dest addr
-	out0	a,sar0l	; (256B page boundary)
-	out0	l,sar0h ;
+	out0	e,dar0l	;
+	out0	d,dar0h ;
+	out0	l,dar0b	; dest addr
+	pushix
+	pop	d
+	out0	e,sar0l	;
+	out0	d,sar0h ;
 	out0	h,sar0b	; source addr
 	out0	c,bcr0l	;
 	out0	b,bcr0h	; byte count
@@ -415,8 +418,10 @@ cci0:	cmp	m		;search command table
 	inx	h
 	djnz	cci0		;loop untill all valid commands are checked
 	; check for added commands
-	mvi	h,'C'
-	mov	l,a
+	mov	b,a
+	call	char
+	jrz	error
+	mov	c,a
 	call	getmod
 	jnc	command
 error:	lxi	h,errm		;if command unknown, beep and re-prompt
@@ -474,11 +479,11 @@ menu:
 	db	CR,LF,'V - Show ROM version'
 	db	TRM
 
-btcm:	db	' <sid> [tag] - boot ',TRM
-cmsep:	db	' - ',TRM
+btcm:	db	' <sid> [tag] - network boot ',TRM
 
 Qcomnd:
-	call	modmnu	; may print nothing
+	call	netmnu	; may print nothing
+	call	dskmnu	; may print nothing
 	lxi	h,menu
 	call	msgprt
 	jmp	cmdmnu	; may print nothing
@@ -713,18 +718,22 @@ ic0:
 	pop	h	; count to HL (L)
 	mvi	h,16-3
 	mvi	b,0	; safety
+	push	b	; C gets trashed by conout
 ic1:
 	call	space
+	pop	b
+	push	b
 	inp	a
 	call	hexout
 	dcr	l	; assume <= 256
 	jrz	ic2
-	dcr	h
+	dcr	h	; col count
 	jrnz	ic1
 	call	crlf
 	mvi	h,16
 	jr	ic1
 ic2:
+	pop	b	; fix stack
 	call	crlf
 	ret
 
@@ -771,8 +780,13 @@ cc0:	out	0ffh
 	ret
 endif
 
-; print added command help based on modules
-cmdmnu:
+; locate module(s) and execute callback
+; IY=callback routine
+; B=module class, C=module ID, '*'=wildcard
+; NOTE: callback made with extended ROM mapped.
+; Callback: IX=module base, return A=0 on success
+; Returns CY if no module found
+locmod:
 	; must map-in more of ROM...
 	in0	a,mmu$cbar
 	push	psw
@@ -780,53 +794,59 @@ cmdmnu:
 	out0	a,mmu$cbar
 	;
 	lxix	modules
-cm1:
-	ldx	c,+2
-	ldx	b,+3	; BC = length (next module)
+	mvi	l,0ffh	; not found
+lm1:	ldx	e,+2
+	ldx	d,+3	; DE = length (next module)
 	ldx	a,+0
-	cpi	0ffh	; no more modules
-	jrz	cm9
-	cpi	'C'
-	jrnz	cm0
+	cpi	0ffh	; end of modules?
+	jrz	lm9
+	mov	a,b
+	cpi	'*'	; any
+	jrz	lm2
+	cpi	'@'	; [A-Z]
+	jrz	lm4
+	cmpx	+0
+	jrnz	lm0
+lm2:	mov	a,c
+	cpi	'*'
+	jrz	lm3
+	cmpx	+1
+	jrnz	lm0
+lm3:	push	h
+	push	d
 	push	b
-	call	crlf
-	ldx	c,+1	; command char
-	call	conout
-	lxi	h,cmsep
-	call	msgprt
-	ldx	e,+4
-	ldx	d,+5	; DE = offset of description
-	pushix
-	pop	h
-	dad	d
-	call	msgprt
+	call	calliy
 	pop	b
-cm0:	dadx	b
-	jr	cm1
+	pop	d
+	pop	h
+	mov	l,a
+lm0:	dadx	d
+	jr	lm1
+lm4:	ldx	a,+0
+	ani	01100000b	; significant bits
+	cpi	01000000b	; uppercase letter?
+	jrz	lm2
+	jr	lm0
 
-cm9:	; restore memory map before returning
+calliy:	pciy
+
+lm9:	; restore memory map before returning
 	pop	psw
 	out0	a,mmu$cbar
+	mov	a,l
+	ora	a
+	rz	; success - found 1 (or more)
+	stc
 	ret
 
-; print boot command help based on modules
-modmnu:
-	; must map-in more of ROM...
-	in0	a,mmu$cbar
-	push	psw
-	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
-	out0	a,mmu$cbar
-	;
-	lxix	modules
-mm1:
-	ldx	c,+2
-	ldx	b,+3	; BC = length (next module)
-	ldx	a,+0
-	cpi	0ffh	; no more modules
-	jrz	mm9
-	cpi	'N'
-	jrnz	mm0
-	push	b
+; print network boot command help based on modules
+netmnu:
+	mvi	b,'n'
+	mvi	c,'*'	; all netboot modules
+	lxiy	netprt
+	jmp	locmod
+
+netprt:
 	call	crlf
 	mvi	c,'B'
 	call	conout
@@ -839,54 +859,54 @@ mm1:
 	pushix
 	pop	h
 	dad	d
-	call	msgprt
-	pop	b
-mm0:	dadx	b
-	jr	mm1
+	jmp	msgprt	; A=0 on return
 
-mm9:	; restore memory map before returning
-	pop	psw
-	out0	a,mmu$cbar
-	ret
+; print added command help based on modules
+cmdmnu:
+	mvi	b,'@'
+	mvi	c,'*'	; all command modules
+	lxiy	modprt
+	jmp	locmod
 
-; search for boot module, L=char H=class
-getmod:
-	in0	a,mmu$cbar
-	push	psw
-	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
-	out0	a,mmu$cbar
-	lxix	modules
-gm0:	ldx	c,+2	; never zero?
-	ldx	b,+3
-	ldx	a,+0
-	cpi	0ffh	; no more modules
-	jrz	gm3
-	cmp	h
-	jrnz	gm1
-	ldx	a,+1
-	cmp	l
-	jrz	gm2
-gm1:	dadx	b
-	jr	gm0
-gm2:	pushix
-	; TODO: use DMAC to move directly...
+; print current module description (help)
+modprt:
+	call	crlf
+	ldx	e,+4
+	ldx	d,+5	; DE = offset of description (help)
+	pushix
 	pop	h
-	push	b	; save for 2nd move
-	lxi	d,8000h	; move up high first
-	ldir
-	pop	b	; length of module
-	pop	psw
-	out0	a,mmu$cbar
-	lxi	h,8000h
-	lxi	d,3000h	; now move back low
-	ldir
+	dad	d
+	jmp	msgprt	; A=0 on return
+
+; print disk boot command help based on modules
+dskmnu:
+	mvi	b,'d'
+	mvi	c,'*'	; all disk boot modules
+	lxiy	modprt
+	jmp	locmod
+
+; search for module and load it, C=char B=class
+getmod:
+	lxiy	lodmod
+	call	locmod
+	ret	; CY = not found
+
+lodmod:	mvi	h,00h	; src from ROM bank
+	mvi	l,08h	; dst is RAM bank
+	lxi	d,3000h	; RAM dest
+	ldx	c,+2
+	ldx	b,+3
+	; IX=module address
+	call	dmacpy
 	xra	a
 	ret
 
-gm3:	pop	psw
-	out0	a,mmu$cbar
-	stc
-	ret
+trydsk:	mvi	b,'d'
+	push	d
+	call	getmod
+	pop	d
+	jc	error
+	jmp	command
 
 ; Boot
 Bcomnd:
@@ -894,12 +914,13 @@ Bcomnd:
 	jrnz	bn7
 	mvi	a,'C'	; default to console?
 bn7:
-	mov	l,a
+	mov	c,a
 	push	d
-	mvi	h,'N'
+	mvi	b,'n'
 	call	getmod
 	pop	d
-	jc	error
+	jc	trydsk
+; Network boot - SNIOS is loaded...
 	; transition to nbstk...
 	pop	h
 	lxi	sp,nbstk

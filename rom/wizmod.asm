@@ -5,7 +5,7 @@
 
 	cseg
 first:
-	db	'N','W'
+	db	'n','W'
 	dw	last-first
 	dw	descr-first
 

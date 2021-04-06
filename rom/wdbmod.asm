@@ -34,7 +34,7 @@ SOCK7	equ	111$01$000b
 
 	cseg
 first:
-	db	'C','Z'
+	db	'W','D'
 	dw	last-first
 	dw	descr-first
 
@@ -42,7 +42,7 @@ first:
 	jmp	start	; network configuration util
 
 	dseg
-descr:	db	'Debug dump WizNet',0
+descr:	db	'WD - debug dump WizNet',0
 
 	cseg
 start:

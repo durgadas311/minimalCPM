@@ -24,7 +24,7 @@ conine	equ	0046h
 
 	cseg
 first:
-	db	'C','W'
+	db	'W','C'
 	dw	last-first
 	dw	descr-first
 
@@ -32,7 +32,7 @@ first:
 	jmp	start	; network configuration util
 
 	dseg
-descr:	db	'Configure WizNet',0
+descr:	db	'WC - configure WizNet',0
 
 idmsg:	db	'Node ID:  ',0
 gwmsg:	db	'Gateway:  ',0
