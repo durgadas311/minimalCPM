@@ -268,8 +268,8 @@ endif
 ; DMA 00000... into 80000... (8K)
 ; i.e. copy core ROM (8K) into RAM using DMAC
 dmarom:
-	mvi	h,0	; src is ROM bank
-	mvi	l,80h	; dst is RAM bank
+	mvi	h,00h	; src is ROM bank
+	mvi	l,08h	; dst is RAM bank
 	lxix	0000h	; 
 	lxi	d,0000h	;
 	lxi	b,2000h	; bytes
