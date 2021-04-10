@@ -11,8 +11,9 @@ PLAT = sc203
 WIZBLD = /home/drmiller/cpnet-bld/w5500/mt011
 SERBLD = /home/drmiller/cpnet-bld/ser-dri/minz
 
+WIZCFG = $(WIZBLD)/src/libwiznt.rel $(WIZBLD)/src/libnvram.rel
 WIZSNIOS = $(WIZBLD)/src/snios.rel
-WIZLIB = $(WIZBLD)/src/libwiznt.rel
+WIZLIB = $(WIZBLD)/src/libwiznt.rel $(WIZBLD)/src/libnvram.rel
 
 # any copy of ser-dri snios will do...
 SERSNIOS = $(SERBLD)/src/snios.rel
@@ -51,7 +52,7 @@ zout/%.rel: %.asm
 end.bin:
 	/bin/echo -e -n '\377' >$@
 
-wizmod.obj: zout/wizmod.rel $(WIZSNIOS) zout/plug.rel
+wizmod.obj: zout/wizmod.rel $(WIZCFG) $(WIZSNIOS) zout/plug.rel
 	ld80 -O obj -o $@ -P 0x3000 $^
 
 conmod.obj: zout/conmod.rel $(SERSNIOS) zout/conio.rel zout/plug.rel
