@@ -41,5 +41,13 @@ cpnos-w.sys: cobdos.spr cobios.spr ndos.spr $(WIZSNIOS)
 		-bdos cobdos.spr \
 		-bios cobios.spr
 
+cpnos-wbw.sys: cobdos.spr wbwbios.spr ndos.spr $(WIZSNIOS)
+	mknetboot -o $@ -t 0xfe00 \
+		x:=x: \
+		-ndos ndos.spr \
+		-snios $(WIZSNIOS) \
+		-bdos cobdos.spr \
+		-bios wbwbios.spr
+
 ship:
 	rsync -Wuv cpnos.sys ../../bin

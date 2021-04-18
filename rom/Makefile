@@ -40,6 +40,10 @@ netboot-minz.com: zout/netboot.rel $(SERSNIOS) zout/minzasci1.rel
 netboot-asci0.com: zout/netboot.rel $(SERSNIOS) zout/z180asci0.rel
 	ld80 -O obj -o $@ $^
 
+netboot-wbw-wiz.mod: zout/netboot-wbw.rel $(WIZSNIOS) $(WIZLIB)
+	ld80 -O obj -P 0x100 -o netboot-wbw-wiz.obj $^
+	dd if=netboot-wbw-wiz.obj conv=sync bs=8k of=$@
+
 config.lib: $(PLAT).lib __FRC__
 	cp $< $@
 
