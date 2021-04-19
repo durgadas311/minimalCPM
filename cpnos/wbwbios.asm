@@ -33,17 +33,17 @@ cpm	equ	0000h
 iobyte	equ	0004h
 bdos	equ	0005h
 buff	equ	0080h	;default buffer
+romwbw	equ	0fff0h
 
-CONLUN	equ	0
+resusr	equ	0f003h	; RomWBW func code for TRAP check
+
+CONLUN	equ	0	; is this always the console?
 fconi	equ	0
 fcono	equ	1
 fconis	equ	2
 fconos	equ	3
 
 	maclib z180
-
-; Z180 registers we need
-itc	equ	34h
 
 ; Note new cold-boot sequence.
 ;	1. Arrive first here at 'cboote'.
@@ -121,64 +121,19 @@ boot:	;print signon message and go to NDOS
 ; must not depend on stack until we clear TRAP.
 ; HL=return address
 wbhook:
-	in0	a,itc
-	bit	7,a
-	jrz	jmphl	; no TRAP
-	pop	d	; TRAP address
-	dcx	d	; possible opcode start
-	bit	6,a
-	jrz	wb0
-	dcx	d
-wb0:	ani	01111111b	;
-	out0	a,itc		; reset TRAP latch
-	lxi	sp,100h		; need stack to print message...
+	; We don't know the Z180 I/O base, so need to call RomWBW
+	pop	d	; TRAP address, possibly...
+	lxi	sp,100h		; need good stack to do anything
 	push	h		; return address from NDOS
-	lxi	h,trapx
-	mov	a,d
-	call	hexout
-	mov	a,e
-	call	hexout
-	lxi	h,trap
-	; NOTE: this message may/will go over CP/NET...
-	jmp	msgout	; and return to NDOS
-jmphl:	pchl
-
-trap:	db	cr,lf,'*** TRAP '
-trapx:	db	'xxxx',cr,lf,0
-
-; puts hex digits at (HL++)
-hexout:
-	push	psw
-	rlc
-	rlc
-	rlc
-	rlc
-	call	hexdig
-	pop	psw
-hexdig:	ani	0fh
-	adi	90h
-	daa
-	aci	40h
-	daa
-	mov	m,a
-	inx	h
-	ret
-
-; print message at HL until NUL
-msgout:	mov	a,m
-	ora	a
-	rz
-	inx	h
-	mov	c,a
-	push	h
-	call	bco
-	pop	h
-	jr	msgout
+	xchg	; TRAP address to HL
+	lxi	b,resusr
+	jmp	romwbw
 
 ;
 ;
 
 if WIZNET
+; Use RomWBW for console I/O
 const:
 	lxi	b,(fconis SHL 8)+CONLUN
 	rst	1
@@ -207,7 +162,7 @@ conost:
 	ret
 else
 ; Using console for network...
-; TODO: how does that work with RomWBW?
+; TODO: how would that work with RomWBW?
 fifo:	db	0,0,0,0,0,0,0,0
 wfifo:	dw	fifo	; fifo write ptr
 rfifo:	dw	fifo	; fifo read ptr
