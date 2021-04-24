@@ -17,6 +17,8 @@ WIZLIB = $(WIZBLD)/src/libwiznt.rel $(WIZBLD)/src/libnvram.rel
 
 # any copy of ser-dri snios will do...
 SERSNIOS = $(SERBLD)/src/snios.rel
+# NOTE: all 'netboot.rel' are identical
+NBOOT = $(SERBLD)/src/netboot.rel
 
 all:
 	$(MAKE) rom PLAT=sc203
@@ -24,23 +26,26 @@ all:
 
 rom: mincpm-$(PLAT).rom
 
-mincpm-minz.rom: zout/mincpm.cim auxminz.obj end.bin
+mincpm.bin: zout/mincpm.rel $(NBOOT) zout/modloc.rel
+	ld80 -O obj -D 0x2000 -c -o $@ $^
+
+mincpm-minz.rom: mincpm.bin auxminz.obj end.bin
 	cat $^ >$@
 
-mincpm-sc203.rom: zout/mincpm.cim conmod.obj wizmod.obj wcfmod.obj wdbmod.obj end.bin
+mincpm-sc203.rom: mincpm.bin conmod.obj wizmod.obj wcfmod.obj wdbmod.obj end.bin
 	cat $^ >$@
 
 # CPNETLDR but over the network
-cpnboot-minz.com: zout/cpnboot.rel $(SERSNIOS) zout/minzasci1.rel
+cpnboot-minz.com: zout/cpnboot.rel $(NBOOT) $(SERSNIOS) zout/minzasci1.rel
 	ld80 -O obj -o $@ $^
 
-netboot-minz.com: zout/netboot.rel $(SERSNIOS) zout/minzasci1.rel
+netboot-minz.com: zout/netboot.rel $(NBOOT) $(SERSNIOS) zout/minzasci1.rel
 	ld80 -O obj -o $@ $^
 
-netboot-asci0.com: zout/netboot.rel $(SERSNIOS) zout/z180asci0.rel
+netboot-asci0.com: zout/netboot.rel $(NBOOT) $(SERSNIOS) zout/z180asci0.rel
 	ld80 -O obj -o $@ $^
 
-netboot-wbw-wiz.mod: zout/netboot-wbw.rel $(WIZSNIOS) $(WIZLIB)
+netboot-wbw-wiz.mod: zout/netboot-wbw.rel $(NBOOT) $(WIZSNIOS) $(WIZLIB)
 	ld80 -O obj -P 0x100 -o netboot-wbw-wiz.obj $^
 	dd if=netboot-wbw-wiz.obj conv=sync bs=8k of=$@
 

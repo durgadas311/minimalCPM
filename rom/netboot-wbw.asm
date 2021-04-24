@@ -5,12 +5,13 @@ WIZNET	equ	1	; compiling for WizNET with NVRAM?
 
 	maclib	z180
 
-	extrn	NTWKIN,NTWKST,CNFTBL,SNDMSG,RCVMSG,NTWKER,NTWKBT,NTWKDN,CFGTBL
 ;	extrn	descr
 if WIZNET
 	extrn	wizcfg
 	public	nvbuf
 endif
+	extrn	netboot
+	public	ldmsg,srvid
 
 false	equ	0
 true	equ	not false
@@ -43,17 +44,6 @@ SID	equ	2
 FNC	equ	3
 SIZ	equ	4
 DAT	equ	5
-
-; relative locations in cpnos (.sys) image
-memtop	equ	0	; top of memory, 00 = 64K
-comlen	equ	1	; common length
-bnktop	equ	2	; banked top (not used)
-bnklen	equ	3	; banked length (00)
-entry	equ	4	; entry point of OS
-cfgtab	equ	6	; CP/NET cfgtbl
-org0	equ	16	; not used(?)
-ldmsg	equ	128	; load map/message ('$' terminated)
-recs	equ	256	; records to load, top-down
 
 ; Usage: NETBOOT [nid [args...]]
 
@@ -114,7 +104,7 @@ bn6:	mov	a,m
 	mvi	a,0
 	jrnz	bn8	;use 00
 	mov	a,l
-bn8:	sta	boot$server
+bn8:	sta	srvid
 	lxi	h,msgbuf+DAT
 	mvi	m,0	; len, re-set later
 	inx	h
@@ -136,71 +126,14 @@ bn2:	mvi	m,0	; NUL term
 	sta	msgbuf+DAT
 	mvi	a,1
 	sta	msgbuf+FNC
-	; msgbuf now setup for boot request.
-	call	NTWKIN
-	ora	a
-	jnz	error
-loop:
-	lda	boot$server
-	sta	msgbuf+DID
-	lda	CFGTBL+1	;client$id
-	sta	msgbuf+SID
-	mvi	a,0xb0
-	sta	msgbuf+FMT
-	call	netsr	; send request, receive response
-	jc	error	; network error
-	lda	msgbuf+FMT
-	cpi	0xb1
-	jnz	error	; invalid response
-	lda	msgbuf+FNC
-	ora	a
-	jz	error	; NAK
-	dcr	a
-	jrz	ldtxt
-	dcr	a
-	jrz	stdma
-	dcr	a
-	jrz	load
-	dcr	a
-	jnz	error	; unsupported function
-	; done - execute boot code
+	lxi	h,msgbuf
+	call	netboot
+	jc	error
+	; HL=start address
+	push	h
 	call	crlf
-	lhld	msgbuf+DAT
-	pchl	; jump to code...
-load:	lhld	dma
-	xchg
-	lxi	h,msgbuf+DAT
-	lxi	b,128
-	ldir
-	xchg
-	shld	dma
-netack:
-	xra	a
-	sta	msgbuf+FNC
-	sta	msgbuf+SIZ
-	jr	loop
-stdma:
-	lhld	msgbuf+DAT
-	shld	dma
-	jr	netack
-ldtxt:
-	call	crlf
-	lxi	h,msgbuf+DAT
-	call	msgout
-	jr	netack
-
-; Network Send/Receive
-netsr:
-	lxi	b,msgbuf
-	call	SNDMSG
-	ora	a
-	jrnz	netsre
-	lxi	b,msgbuf
-	call	RCVMSG
-	ora	a
-	rz
-netsre:	stc
-	ret
+	pop	h
+	pchl
 
 ; Get next character from NUL-terminated line buffer (DE).
 char:	ldax	d
@@ -268,6 +201,11 @@ msgout:	mov	a,m	; BDOS func 9 style msgprt
 	inx	h
 	jr	msgout
 
+ldmsg:	push	h
+	call	crlf
+	pop	h
+	jr	msgout
+
 ; TODO: need to make this work after OS clobbered...
 conout:
 	push	h
@@ -283,11 +221,10 @@ conout:
 
 	dseg
 ; variables to network boot CP/NOS
-boot$server	ds	1
-dma:		ds	2
-msgbuf:		ds	5+256
-		ds	256
-nbstk:		ds	0
+srvid:	ds	1
+msgbuf:	ds	5+256
+	ds	256
+nbstk:	ds	0
 
 if WIZNET
 nvbuf:		ds	512

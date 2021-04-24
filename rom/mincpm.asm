@@ -1,6 +1,6 @@
 ; ROM monitor/boot for Minimal CP/M System.
 ; total size of ROM+modules must not exceed 32K
-VERN	equ	012h	; ROM version
+VERN	equ	013h	; ROM version
 
 romsiz	equ	1000h	; minimum space for ROM
 
@@ -18,6 +18,12 @@ true	equ	not false
 tdebug	equ	false
 
 	include	config.lib
+
+	extrn	netboot
+	public	ldmsg,srvid
+	public	NTWKIN,NTWKST,CNFTBL,SNDMSG,RCVMSG,NTWKER,NTWKBT,NTWKDN,CFGTBL
+
+	extrn	modloc	; so we know where modules begin
 
 	$*macro
 
@@ -66,19 +72,7 @@ astcl	equ	1ah
 astch	equ	1bh
 endif
 
-; RAM used...
-	org	02000h
-savstk:	ds	2
-addr0:	ds	2
-addr1:	ds	2
-line:	ds	64
-; Network Boot
-boot$server	ds	1
-dma:		ds	2
-msgbuf:		ds	5+256
-		ds	256
-nbstk:		ds	0
-
+	aseg
 ; network boot module entry points
 	org	03000h
 	ds	2	; identifiers
@@ -109,40 +103,47 @@ DAT	equ	5
 
 stack	equ	00000h	; stack at top of memory (wrapped)
 
+	cseg
 ; Start of ROM code
 	org	00000h
-
+rst0e	equ	$+8
 	jmp	init
-
-	rept	0008h-$
+	rept	rst0e-$
 	db	0ffh
 	endm
+rst1e	equ	$+8
 rst1:	jmp	swtrap
-	rept	0010h-$
+	rept	rst1e-$
 	db	0ffh
 	endm
+rst2e	equ	$+8
 rst2:	jmp	swtrap
-	rept	0018h-$
+	rept	rst2e-$
 	db	0ffh
 	endm
+rst3e	equ	$+8
 rst3:	jmp	swtrap
-	rept	0020h-$
+	rept	rst3e-$
 	db	0ffh
 	endm
+rst4e	equ	$+8
 rst4:	jmp	swtrap
-	rept	0028h-$
+	rept	rst4e-$
 	db	0ffh
 	endm
+rst5e	equ	$+8
 rst5:	jmp	swtrap
-	rept	0030h-$
+	rept	rst5e-$
 	db	0ffh
 	endm
+rst6e	equ	$+8
 rst6:	jmp	swtrap
-	rept	0038h-$
+	rept	rst6e-$
 	db	0ffh
 	endm
+rst7e	equ	$+8
 rst7:	jmp	swtrap
-	rept	0040h-$
+	rept	rst7e-$
 	db	0ffh
 	endm
 ; public entry points:
@@ -793,7 +794,7 @@ locmod:
 	mvi	a,1111$1000b	; ca at 0xF000, ba at 0x8000
 	out0	a,mmu$cbar
 	;
-	lxix	modules
+	lxix	modloc
 	mvi	l,0ffh	; not found
 lm1:	ldx	e,+2
 	ldx	d,+3	; DE = length (next module)
@@ -931,13 +932,7 @@ bn7:
 	mvi	a,0
 	jrnz	bn8	;use 00
 	mov	a,l
-bn8:	sta	boot$server
-	push	d	; save line pointer
-	call	NTWKIN
-	pop	d
-	ora	a
-	jnz	error
-
+bn8:	sta	srvid
 	lxi	h,msgbuf+DAT
 	mvi	m,0	; len, re-set later
 	inx	h
@@ -961,67 +956,19 @@ bn2:	mvi	m,0
 	sta	msgbuf+DAT
 	mvi	a,1
 	sta	msgbuf+FNC
-loop:
-	lda	boot$server
-	sta	msgbuf+DID
-	lda	client$id
-	sta	msgbuf+SID
-	mvi	a,0xb0
-	sta	msgbuf+FMT
-	call	netsr	; send request, receive response
-	jc	error	; network error
-	lda	msgbuf+FMT
-	cpi	0xb1
-	jnz	error	; invalid response
-	lda	msgbuf+FNC
-	ora	a
-	jz	error	; NAK
-	dcr	a
-	jrz	ldtxt
-	dcr	a
-	jrz	stdma
-	dcr	a
-	jrz	load
-	dcr	a
-	jnz	error	; unsupported function
-	; done - execute boot code
+	lxi	h,msgbuf
+	call	netboot
+	jc	error
+	push	h
 	call	crlf
-	lhld	msgbuf+DAT
-	pchl	; jump to code...
-load:	lhld	dma
-	xchg
-	lxi	h,msgbuf+DAT
-	lxi	b,128
-	ldir
-	xchg
-	shld	dma
-netack:
-	xra	a
-	sta	msgbuf+FNC
-	sta	msgbuf+SIZ
-	jr	loop
-stdma:
-	lhld	msgbuf+DAT
-	shld	dma
-	jr	netack
-ldtxt:
-	call	crlf
-	lxi	h,msgbuf+DAT
-	call	print
-	jr	netack
+	pop	h
+	pchl
 
-netsr:
-	lxi	b,msgbuf
-	call	SNDMSG
-	ora	a
-	jrnz	netsre
-	lxi	b,msgbuf
-	call	RCVMSG
-	ora	a
-	rz
-netsre:	stc
-	ret
-	
+ldmsg:	push	h
+	call	crlf
+	pop	h
+	jmp	print
+
 *********************************************************
 **  Utility subroutines
 *********************************************************
@@ -1208,6 +1155,17 @@ decot1:
 	mov	c,a
 	jmp	conout
 
-modules: ds	0	; modules appended here...
+; more code may be linked here, before modules
+; RAM used...
+	dseg
+savstk:	ds	2
+addr0:	ds	2
+addr1:	ds	2
+line:	ds	64
+; Network Boot
+srvid:	ds	1
+msgbuf:	ds	5+256
+	ds	256
+nbstk:	ds	0
 
 	end
