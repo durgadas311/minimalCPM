@@ -39,6 +39,7 @@ wizinit:
 msgout:	mov	a,m
 	ora	a
 	rz
+	inx	h
 	mov	c,a
 	call	conout
 	jmp	msgout
