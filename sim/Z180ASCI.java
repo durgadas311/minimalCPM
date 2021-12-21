@@ -6,7 +6,7 @@ import java.util.Properties;
 import java.io.*;
 import java.util.concurrent.Semaphore;
 import java.lang.reflect.Constructor;
-import z80core.ComputerIO;
+import z80core.*;
 
 // No interrupts or DMA supported...
 public class Z180ASCI implements ComputerIO {
@@ -61,6 +61,7 @@ public class Z180ASCI implements ComputerIO {
 
 	private Z180ASCIChan[] ports = new Z180ASCIChan[2];
 	private boolean z180s;
+	private Z180 cpu;
 
 	public Z180ASCI(Properties props, BaseSystem sys, boolean z180s) {
 		this.sys = sys;
@@ -70,6 +71,10 @@ public class Z180ASCI implements ComputerIO {
 		ports[1] = new Z180ASCIChan(props, "asci1", 1, ports[0]);
 		reset();
 	}
+
+	/////////////////////////////////
+	/// Interfaces for ComputerIO ///
+	public void setCPU(Z180 cpu) { this.cpu = cpu; }
 
 	///////////////////////////////
 	/// Interfaces for IODevice ///
@@ -133,6 +138,7 @@ public class Z180ASCI implements ComputerIO {
 		private int index;
 		private Z180ASCIChan chA; // null on Ch A
 		private int modem = 0;	// modem inputs, floating
+		private int ints = 0;
 		private Semaphore wait;
 
 		private SerialDevice io = null;
@@ -249,6 +255,7 @@ public class Z180ASCI implements ComputerIO {
 		private void set_stat(int val) {
 			reg_stat = (val & (stat_rie | stat_tie)) |
 				(reg_stat & ~(stat_rie | stat_tie));
+			chkIntr();
 		}
 
 		private void set_asxt(int val) {
@@ -266,6 +273,32 @@ public class Z180ASCI implements ComputerIO {
 			recalcBaud();
 		}
 
+		private void chkIntr() {
+			// TODO: interrupt for DCD, OVRN, PE, FE
+			int b;
+			synchronized(this) {
+				if ((reg_stat & stat_rie) != 0 &&
+						(reg_stat & stat_rdrf) != 0) {
+					ints |= 1;
+				} else {
+					ints &= ~1;
+				}
+				if ((reg_stat & stat_tie) != 0 &&
+						(reg_stat & stat_tdre) != 0) {
+					ints |= 2;
+				} else {
+					ints &= ~2;
+				}
+				b = ints;
+			}
+			// TODO: this can still race
+			if (b != 0) {
+				cpu.raiseIntnlIntr(7 + index);
+			} else {
+				cpu.lowerIntnlIntr(7 + index);
+			}
+		}
+
 		// 'port' has been shifted! 0-4, 9
 		public int in(int port) {
 			int val = 0;
@@ -277,11 +310,13 @@ public class Z180ASCI implements ComputerIO {
 				val = reg_ctlb;
 				break;
 			case STAT:
+				// TODO: true intr-driver Tx requires async TDRE
 				long t = System.nanoTime();
 				if (t - lastTx > nanoBaud) {
 					if (io_out || fifo.size() < 2) {
 						reg_stat |= stat_tdre;
 						lastTx = t;
+						chkIntr();
 					}
 				}
 				// TODO: handle lastRx somehow
@@ -298,6 +333,7 @@ public class Z180ASCI implements ComputerIO {
 						} catch (Exception ee) {}
 						if (fifi.size() == 0) {
 							reg_stat &= ~stat_rdrf;
+							chkIntr();
 							wait.release();
 						}
 					}
@@ -339,6 +375,7 @@ public class Z180ASCI implements ComputerIO {
 					}
 				}
 				reg_stat &= ~stat_tdre;
+				chkIntr();
 				break;
 			case RDR:
 				// not allowed
@@ -365,6 +402,9 @@ public class Z180ASCI implements ComputerIO {
 			reg_tc = 0;
 			prescale = false;
 			// TODO: update other bits?
+			if (cpu != null) {	// ctor calls reset()...
+				cpu.lowerIntnlIntr(7 + index);
+			}
 			wait.release();
 			updateModemForce();
 			_setModem();
@@ -385,6 +425,7 @@ public class Z180ASCI implements ComputerIO {
 //				if (fifo.size() == 0 || attObj == null) {
 //					synchronized (this) {
 //						reg_stat |= stat_tdre;
+//						chkIntr(); - caution: deadlock?
 //					}
 //				}
 				return c;
@@ -415,6 +456,7 @@ public class Z180ASCI implements ComputerIO {
 				fifi.add(ch & 0xff);
 				lastRx = System.nanoTime();
 				reg_stat |= stat_rdrf;
+				chkIntr();
 			}
 		}
 		public void setBaud(int baud) {

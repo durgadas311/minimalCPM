@@ -2,6 +2,8 @@
 
 import java.util.Arrays;
 import java.util.Vector;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.Properties;
@@ -12,7 +14,8 @@ import z80core.*;
 // TODO: Make hardware configurable...
 // No I/O (outside Z180), no interrupts, ...
 // A19 selects RAM/ROM...
-public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
+public class MinimalCPM implements Computer, Commander, BaseSystem,
+				Interruptor, Runnable {
 	private Z180 cpu;
 	private boolean z180s;
 	private long clock;
@@ -25,8 +28,14 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 	private int traceCycles;
 	private int traceLow;
 	private int traceHigh;
+	private int[] intRegistry;
+	private int[] intLines;
+	private int intState;
+	private int intMask;
 	private Vector<ClockListener> clks;
 	private Vector<TimeListener> times;
+	private Map<Integer, IODevice> ios;
+	private Vector<IODevice> devs;
 	private int sysSpeed = 18432000;
 	private int cpuSpeed = 18432000;
 	private int extSpeed1 = 0;
@@ -45,6 +54,15 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 		cpuLock = new ReentrantLock();
 		clks = new Vector<ClockListener>();
 		times = new Vector<TimeListener>();
+		ios = new HashMap<Integer, IODevice>();
+		devs = new Vector<IODevice>();
+		intRegistry = new int[8];
+		intLines = new int[8];
+		Arrays.fill(intRegistry, 0);
+		Arrays.fill(intLines, 0);
+		intState = 0;
+		intMask = 0;
+
 		String s = props.getProperty("log");
 		if (s != null) {
 			String[] args = s.split("\\s");
@@ -94,6 +112,10 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 		cpu = new Z180(this, asci, z180s);
 		mem = new SimpleRAM_ROM(props);
 		disas = new Z180DisassemblerMAC80(mem, cpu);
+		s = props.getProperty("mt011");
+		if (s != null) {
+			addDevice(new MT011(props, "mt011", 0x5c, 1, this));
+		}
 
 		s = props.getProperty("trace");
 		if (s != null) {
@@ -139,6 +161,44 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 	public int extClock1() { return extSpeed1; }
 	public int extClock2() { return extSpeed2; }
 	public int extClock3() { return extSpeed3; }
+
+	////////////////////////////////
+	// Interruptor implementation //
+	// TODO: more than 8 IRQs? Or N/A?
+	public int registerINT(int irq) {
+		int val = intRegistry[irq & 7]++;
+		// TODO: check for overflow (32 bits max?)
+		return val;
+	}
+	public void raiseINT(int irq, int src) {
+		irq &= 7;
+		intLines[irq] |= (1 << src);
+		if ((intState & ~intMask) != 0) {
+			cpu.setINTLine(true);
+		}
+	}
+	public void lowerINT(int irq, int src) {
+		irq &= 7;
+		intLines[irq] &= ~(1 << src);
+		if (intLines[irq] == 0) {
+			intState &= ~(1 << irq);
+			if ((intState & ~intMask) == 0) {
+				cpu.setINTLine(false);
+			}
+		}
+	}
+	public void triggerNMI() {
+		cpu.triggerNMI();
+	}
+	public void addClockListener(ClockListener lstn) {
+		clks.add(lstn);
+	}
+	public void addTimeListener(TimeListener lstn) {
+		times.add(lstn);
+	}
+	public void waitCPU() {
+		addTicks(1);
+	}
 
 	// These must NOT be called from the thread...
 	public void start() {
@@ -235,6 +295,14 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 				if (args[1].equalsIgnoreCase("asci")) {
 					ret.add(asci.dumpDebug());
 				}
+				if (args[1].equalsIgnoreCase("dev") && args.length > 2) {
+					for (IODevice dev : devs) {
+						if (args[2].equals(dev.getDeviceName())) {
+							ret.add(dev.dumpDebug());
+							break;
+						}
+					}
+				}
 				return ret;
 			}
 			err.add("badcmd");
@@ -243,6 +311,22 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 		} finally {
 			cpuLock.unlock();
 		}
+	}
+
+	private boolean addDevice(IODevice dev) {
+		int base = dev.getBaseAddress();
+		int num = dev.getNumPorts();
+		for (int x = 0; x < num; ++x) {
+			if (ios.get(base + x) != null) {
+				System.err.format("Conflicting I/O %02x (%02x)\n", base, num);
+				return false;
+			}
+		}
+		devs.add(dev);
+		for (int x = 0; x < num; ++x) {
+			ios.put(base + x, dev);
+		}
+		return true;
 	}
 
 	/////////////////////////////////////////
@@ -264,22 +348,39 @@ public class MinimalCPM implements Computer, Commander, BaseSystem, Runnable {
 	}
 
 	public int inPort(int port) {
-		return 0xff;
+		int val = 0;
+		port &= 0xff;
+		IODevice dev = ios.get(port);
+		if (dev == null) {
+			//System.err.format("Undefined Input on port %02x\n", port);
+		} else {
+			val = dev.in(port);
+		}
+		return val;
 	}
 
 	private long lastT = 0;
 	private long lastC = 0;
 	public void outPort(int port, int value) {
-		if ((port & 0xff) != 0xff) return;
-		// CPU timing debug
-		long t = System.nanoTime();
-		if (value == 0) {
-			System.err.format("FF: %dc, %dt\n", clock - lastC, t - lastT);
-		} else {
-			System.err.format("FF: -----\n");
+		if ((port & 0xff) == 0xff) {
+			// CPU timing debug
+			long t = System.nanoTime();
+			if (value == 0) {
+				System.err.format("FF: %dc, %dt\n", clock - lastC, t - lastT);
+			} else {
+				System.err.format("FF: -----\n");
+			}
+			lastT = t;
+			lastC = clock;
+			return;
 		}
-		lastT = t;
-		lastC = clock;
+		port &= 0xff;
+		IODevice dev = ios.get(port);
+		if (dev == null) {
+			//System.err.format("Undefined Output on port %02x value %02x\n", port, value);
+		} else {
+			dev.out(port, value);
+		}
 	}
 	public void changeSpeed(int mlt, int div) {
 		int spd = (sysSpeed * mlt) / div;
