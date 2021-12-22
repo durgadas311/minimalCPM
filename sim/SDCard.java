@@ -120,6 +120,7 @@ public class SDCard implements SPIDevice, TimeListener {
 	static final byte acmd_WrCnt_c = (byte)22;	// TODO: num blks written OK
 	static final byte acmd_EraCnt_c = (byte)23;
 	static final byte acmd_Init_c = (byte)41;
+	static final byte acmd_ReadSCR_c = (byte)51;
 
 
 	private enum State {
@@ -180,7 +181,7 @@ public class SDCard implements SPIDevice, TimeListener {
 	private	int rca;	// [15:0] relative card address - n/u in SPI
 	private	int dsr;	// [15:0] driver stage register
 	private	byte[] csd;	// [127:0] card-specific data
-	private	long scr;	// [32:0] SD config register
+	private	byte[] scr;	// [32:0] SD config register
 	private	int csr;	// [32:0] card status register
 	private	byte[] ssr;	// [511:0] SD status register
 	private boolean sdc2;	// SDC v2?
@@ -212,6 +213,16 @@ public class SDCard implements SPIDevice, TimeListener {
 		index = ix;
 		cid = new byte[16];
 		csd = new byte[16];
+		scr = new byte[8];
+		// SCR is fixed/constant
+		scr[0] = (byte)0x02;	// structure version
+		scr[1] = (byte)0x81;	// era hi, security, 1-bit bus
+		scr[2] = (byte)0x00;
+		scr[3] = (byte)0x0c;
+		scr[4] = (byte)0x00;
+		scr[5] = (byte)0x00;
+		scr[6] = (byte)0x00;
+		scr[7] = (byte)0x00;
 		String media = null;
 		capacity = 64*1024*1024;	// default 64M
 		String s = props.getProperty(String.format("sd_card%d", ix));
@@ -343,8 +354,7 @@ public class SDCard implements SPIDevice, TimeListener {
 		ocr = 0;
 		Arrays.fill(csd, (byte)0);
 		long capval = (cap >> 9); // num 512B blocks
-		//if (capval > 4*1024*1024) { // 4M blocks = 2GB
-		if (true) {
+		if (capval > 4*1024*1024) { // 4M blocks = 2GB
 			// SDHC... 4G-32G
 			sdhc = true;
 			ocr |= 0x40000000;	// SDHC (HCS=1)
@@ -515,6 +525,8 @@ public class SDCard implements SPIDevice, TimeListener {
 					setDataOut(rpk_OK_c, 1, cid);
 				} else if (curCmd == cmd_ReadCSD_c) {
 					setDataOut(rpk_OK_c, 1, csd);
+				} else if (curCmd == acmd_ReadSCR_c) {
+					setDataOut(rpk_OK_c, 1, scr);
 				} else {
 					curState = State.DONE;
 				}
@@ -533,7 +545,8 @@ public class SDCard implements SPIDevice, TimeListener {
 		if (on) { // start xfer
 			spi = 0;
 			curState = State.IDLE;
-			aux = false;
+			// must permit /SCS drop between cmd55 and aux-cmd
+			//aux = false;
 		} else { // terminate xfer
 			if (curState != State.DONE) {
 				System.err.format("/SCS during %s (%02x %02x)\n",
@@ -682,6 +695,14 @@ public class SDCard implements SPIDevice, TimeListener {
 					initCnt = 100000000; // 100mS
 				}
 				setResponse(rsp, 3);
+			}
+			return;
+		case acmd_ReadSCR_c:
+			if (!_aux) {
+				setResponse(rsp | sts_IllCmd_c, 1);
+			} else {
+				curCmd = cmd;
+				setResponse(rsp, 1);
 			}
 			return;
 		}
