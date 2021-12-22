@@ -13,6 +13,8 @@ public class Z180ASCI implements ComputerIO {
 	static final int fifoLimit = 10; // should never even exceed 2
 	private String name = null;
 	private BaseSystem sys;
+	private Z180 cpu;
+	private byte[] ccr;
 
 	static final int CNTLA = 0;	// port after shift
 	static final int CNTLB = 1;	// port after shift
@@ -61,7 +63,6 @@ public class Z180ASCI implements ComputerIO {
 
 	private Z180ASCIChan[] ports = new Z180ASCIChan[2];
 	private boolean z180s;
-	private Z180 cpu;
 
 	public Z180ASCI(Properties props, BaseSystem sys, boolean z180s) {
 		this.sys = sys;
@@ -74,7 +75,10 @@ public class Z180ASCI implements ComputerIO {
 
 	/////////////////////////////////
 	/// Interfaces for ComputerIO ///
-	public void setCPU(Z180 cpu) { this.cpu = cpu; }
+	public void setCPU(Z180 cpu) {
+		this.cpu = cpu;
+		ccr = cpu.getCCR();
+	}
 
 	///////////////////////////////
 	/// Interfaces for IODevice ///
@@ -240,6 +244,7 @@ public class Z180ASCI implements ComputerIO {
 			if ((val & ctla_efr) != 0) {
 				reg_stat &= ~(stat_fe | stat_pe | stat_ovrn);
 			}
+			ccr[(CNTLA << 1) + index] = (byte)reg_ctla;
 			// TODO: only if RTS changed?
 			updateModemOut();
 			recalcBaud();	// word size affects value
@@ -249,23 +254,29 @@ public class Z180ASCI implements ComputerIO {
 			// ctlb_ps and ctlb_cts are the same bit!
 			prescale = ((val & ctlb_ps) != 0);
 			reg_ctlb = (val & ~ctlb_ps) | (reg_ctlb & ctlb_cts);
+			ccr[(CNTLB << 1) + index] = (byte)reg_ctlb;
 			recalcBaud();	// PS and DR affect value
 		}
 
 		private void set_stat(int val) {
 			reg_stat = (val & (stat_rie | stat_tie)) |
 				(reg_stat & ~(stat_rie | stat_tie));
+			ccr[(STAT << 1) + index] = (byte)reg_stat;
 			chkIntr();
 		}
 
 		private void set_asxt(int val) {
 			reg_asxt = val;
+			ccr[(ASEXT << 1) + index] = (byte)reg_asxt;
 			recalcBaud();	// BRG and X1 affect value
 		}
 
+		// 'val' is a 16-bit value
 		private void set_tc(int val) {
 			if (!z180s) return;
 			reg_tc = val;
+			ccr[0x1a + index * 2] = (byte)reg_tc;		// ASTCxL
+			ccr[0x1b + index * 2] = (byte)(reg_tc >> 8);	// ASTCxH
 			recalcBaud();	// if BRG=1
 		}
 
@@ -404,6 +415,12 @@ public class Z180ASCI implements ComputerIO {
 			// TODO: update other bits?
 			if (cpu != null) {	// ctor calls reset()...
 				cpu.lowerIntnlIntr(7 + index);
+				ccr[0x1a + index * 2] = 0;
+				ccr[0x1b + index * 2] = 0;
+				ccr[(ASEXT << 1) + index] = 0;
+				ccr[(STAT << 1) + index] = (byte)reg_stat;
+				ccr[(CNTLA << 1) + index] = (byte)reg_ctla;
+				ccr[(CNTLB << 1) + index] = (byte)reg_ctlb;
 			}
 			wait.release();
 			updateModemForce();
