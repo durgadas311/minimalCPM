@@ -279,6 +279,9 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 					ret.add(cpu.dumpDebug());
 					ret.add(disas.disas(cpu.getRegPC()) + "\n");
 				}
+				if (args[1].equalsIgnoreCase("z180")) {
+					ret.add(cpu.dumpDebugAux());
+				}
 				if (args[1].equalsIgnoreCase("page") && args.length > 2) {
 					String s = dumpPage(args);
 					if (s == null) {
