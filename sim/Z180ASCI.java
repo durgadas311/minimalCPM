@@ -70,7 +70,6 @@ public class Z180ASCI implements ComputerIO {
 		this.z180s = z180s;
 		ports[0] = new Z180ASCIChan(props, "asci0", 0, null);
 		ports[1] = new Z180ASCIChan(props, "asci1", 1, ports[0]);
-		reset();
 	}
 
 	/////////////////////////////////
@@ -78,6 +77,7 @@ public class Z180ASCI implements ComputerIO {
 	public void setCPU(Z180 cpu) {
 		this.cpu = cpu;
 		ccr = cpu.getCCR();
+		reset();
 	}
 
 	///////////////////////////////
@@ -242,7 +242,10 @@ public class Z180ASCI implements ComputerIO {
 			// TODO: implement parity... mask bits...
 			reg_ctla = val & ~ctla_mpbr;
 			if ((val & ctla_efr) != 0) {
-				reg_stat &= ~(stat_fe | stat_pe | stat_ovrn);
+				synchronized(this) {
+					reg_stat &= ~(stat_fe | stat_pe | stat_ovrn);
+				}
+				ccr[(STAT << 1) + index] = (byte)reg_stat;
 			}
 			ccr[(CNTLA << 1) + index] = (byte)reg_ctla;
 			// TODO: only if RTS changed?
@@ -259,8 +262,10 @@ public class Z180ASCI implements ComputerIO {
 		}
 
 		private void set_stat(int val) {
-			reg_stat = (val & (stat_rie | stat_tie)) |
-				(reg_stat & ~(stat_rie | stat_tie));
+			synchronized(this) {
+				reg_stat = (val & (stat_rie | stat_tie)) |
+					(reg_stat & ~(stat_rie | stat_tie));
+			}
 			ccr[(STAT << 1) + index] = (byte)reg_stat;
 			chkIntr();
 		}
@@ -325,7 +330,10 @@ public class Z180ASCI implements ComputerIO {
 				long t = System.nanoTime();
 				if (t - lastTx > nanoBaud) {
 					if (io_out || fifo.size() < 2) {
-						reg_stat |= stat_tdre;
+						synchronized(this) {
+							reg_stat |= stat_tdre;
+						}
+						ccr[(STAT << 1) + index] = (byte)reg_stat;
 						lastTx = t;
 						chkIntr();
 					}
@@ -344,6 +352,7 @@ public class Z180ASCI implements ComputerIO {
 						} catch (Exception ee) {}
 						if (fifi.size() == 0) {
 							reg_stat &= ~stat_rdrf;
+							ccr[(STAT << 1) + index] = (byte)reg_stat;
 							chkIntr();
 							wait.release();
 						}
@@ -385,7 +394,10 @@ public class Z180ASCI implements ComputerIO {
 						fifo.add(val);
 					}
 				}
-				reg_stat &= ~stat_tdre;
+				synchronized(this) {
+					reg_stat &= ~stat_tdre;
+				}
+				ccr[(STAT << 1) + index] = (byte)reg_stat;
 				chkIntr();
 				break;
 			case RDR:
@@ -442,6 +454,7 @@ public class Z180ASCI implements ComputerIO {
 //				if (fifo.size() == 0 || attObj == null) {
 //					synchronized (this) {
 //						reg_stat |= stat_tdre;
+//						ccr[(STAT << 1) + index] = (byte)reg_stat;
 //						chkIntr(); - caution: deadlock?
 //					}
 //				}
@@ -473,6 +486,7 @@ public class Z180ASCI implements ComputerIO {
 				fifi.add(ch & 0xff);
 				lastRx = System.nanoTime();
 				reg_stat |= stat_rdrf;
+				ccr[(STAT << 1) + index] = (byte)reg_stat;
 				chkIntr();
 			}
 		}
@@ -481,16 +495,20 @@ public class Z180ASCI implements ComputerIO {
 			// Needed for SYNC modes.
 		}
 
-		private void _setModem() {
+		private synchronized void _setModem() {
 			// modem controls in registers are inverted...
 			reg_ctlb |= ctlb_cts;	// assume OFF
 			if ((modem & VirtualUART.SET_CTS) != 0) {
 				reg_ctlb &= ~ctlb_cts; // set ON
 			}
-			reg_stat |= stat_dcd;	// assume OFF
-			if ((modem & VirtualUART.SET_DCD) != 0) {
-				reg_stat &= ~stat_dcd;	// set ON
+			ccr[(CNTLB << 1) + index] = (byte)reg_ctlb;
+			synchronized(this) {
+				reg_stat |= stat_dcd;	// assume OFF
+				if ((modem & VirtualUART.SET_DCD) != 0) {
+					reg_stat &= ~stat_dcd;	// set ON
+				}
 			}
+			ccr[(STAT << 1) + index] = (byte)reg_stat;
 			// no one to notify if things change?
 			//System.err.format("%c: _setModem() %04x ctlb=%02x stat=%02x\n",
 			//	index + '0', modem, reg_ctlb, reg_stat);
