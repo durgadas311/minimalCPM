@@ -605,6 +605,7 @@ public class RC2014_CF implements IODevice, Runnable {
 			dataIx = 0;
 			if (cmdBuf[adr_SecCnt_c] > 0) {
 				--cmdBuf[adr_SecCnt_c];
+				wrOff += driveSecLen;
 				if (isLBA()) {
 					incLBA();
 				} else {
@@ -612,9 +613,12 @@ public class RC2014_CF implements IODevice, Runnable {
 				}
 			}
 			if (cmdBuf[adr_SecCnt_c] > 0) {
+				if (wrOff >= cd.capacity) {
+					setError(err_ABRT_c);
+					break;
+				}
 				synchronized(this) {
 				cmdBuf[adr_Status_c] |= sts_Drq_c;
-				cmdBuf[adr_Status_c] |= sts_Busy_c;
 				}
 				break;
 			}
