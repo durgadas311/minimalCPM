@@ -114,7 +114,11 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 		disas = new Z180DisassemblerMAC80(mem, cpu);
 		s = props.getProperty("mt011");
 		if (s != null) {
-			addDevice(new MT011(props, "mt011", 0x5c, 1, this));
+			addDevice(new MT011(props, s, 0x5c, 1, this));
+		}
+		s = props.getProperty("rc2014_cf");
+		if (s != null) {
+			addDevice(new RC2014_CF(props, s, 0x10, this));
 		}
 
 		s = props.getProperty("trace");
