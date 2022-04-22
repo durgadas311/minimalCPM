@@ -41,18 +41,26 @@ public class RC2014_CF implements IODevice, Runnable {
 	public static final int err_AMNF_c = 0x01;
 
 	// CF Command codes
-	static final byte cmd_Recal_c = (byte)0x10;
-	static final byte cmd_Read_c = (byte)0x20;
-	static final byte cmd_ReadRetry_c = (byte)0x21;
-	static final byte cmd_ReadV_c = (byte)0x40;	// implement?
-	static final byte cmd_ReadVRetry_c = (byte)0x41;	// implement?
-	static final byte cmd_Write_c = (byte)0x30;
-	static final byte cmd_WriteRetry_c = (byte)0x31;
-	static final byte cmd_WriteV_c = (byte)0x3c;
-	static final byte cmd_Seek_c = (byte)0x70;
-	static final byte cmd_Features_c = (byte)0xef;
-	static final byte cmd_IdentDrv_c = (byte)0xec;
-	static final byte cmd_SetParam_c = (byte)0x91;
+	static final int cmd_Recal_c = 0x10;
+	static final int cmd_Read_c = 0x20;
+	static final int cmd_ReadRetry_c = 0x21;
+	static final int cmd_ReadV_c = 0x40;		// implement?
+	static final int cmd_ReadVRetry_c = 0x41;	// implement?
+	static final int cmd_Write_c = 0x30;
+	static final int cmd_WriteRetry_c = 0x31;
+	static final int cmd_WriteV_c = 0x3c;
+	static final int cmd_Seek_c = 0x70;
+	static final int cmd_Features_c = 0xef;
+	static final int cmd_IdentDrv_c = 0xec;
+	static final int cmd_SetParam_c = 0x91;
+
+	// cmd_Features_c sub-commands
+	static final int fea_8bit_c = 0x01;		// | 0x08 to unset
+	static final int fea_WriteCache_c = 0x02;	// | 0x08 to unset
+	static final int fea_XferMode_c = 0x03;		// adr_SecCnt_c has mode
+	static final int fea_AdvPwrMgt_c = 0x05;	// | 0x08 to unset
+	static final int fea_ExtPwrOps_c = 0x09;	// deprecated
+	static final int fea_PwrLvl1_c = 0x0a;		// | 0x08 to unset
 
 	// State Machine
 	// Read:
@@ -85,8 +93,8 @@ public class RC2014_CF implements IODevice, Runnable {
 
 	// mode COMMAND
 	private byte[] cmdBuf = new byte[16];
-	private byte curCmd;
-	private byte feat;
+	private int curCmd;
+	private int feat;
 	// mode DATA_IN/DATA_OUT
 	private byte[] dataBuf;
 	private int dataLength;
@@ -315,7 +323,7 @@ public class RC2014_CF implements IODevice, Runnable {
 			return;
 		case adr_Feature_c:
 			// anything?
-			feat = (byte)val;
+			feat = val;
 			return;
 		case adr_Cmd_c:
 			synchronized(this) {
@@ -508,6 +516,14 @@ public class RC2014_CF implements IODevice, Runnable {
 			setError(err_ABRT_c);
 			return;
 		}
+//System.err.format("CF cmd %02x %02x %02x %02x %02x %02x %02x\n",
+//			curCmd,
+//			cmdBuf[adr_Head_c] & 0xff,
+//			cmdBuf[adr_CylHi_c] & 0xff,
+//			cmdBuf[adr_CylLo_c] & 0xff,
+//			cmdBuf[adr_Sector_c] & 0xff,
+//			cmdBuf[adr_SecCnt_c] & 0xff,
+//			feat);
 		switch (curCmd) {
 		case cmd_Recal_c:
 		case cmd_Seek_c:
@@ -520,6 +536,10 @@ public class RC2014_CF implements IODevice, Runnable {
 			// sub-command == adr_Feature_c,
 			// params = adr_SecCnt_c, adr_Sector_c,
 			//		adr_CylLo_c, adr_CylHi_c
+			// switch (feat) {
+			// case fea_XXXX_c: ...
+			// TODO: validate 8-bit mode against interface...
+			//System.err.format("CF %d Set Features %02x\n", getLUN(), feat);
 			setDone();
 			break;
 		case cmd_SetParam_c:
@@ -648,7 +668,7 @@ public class RC2014_CF implements IODevice, Runnable {
 			if (resetting) {
 				continue;
 			}
-			curCmd = (byte)cmd;
+			curCmd = cmd;
 			processCmd();
 		}
 	}
@@ -667,13 +687,13 @@ public class RC2014_CF implements IODevice, Runnable {
 			"[7] status  %02x  %02x (cmd) (%d)\n" +
 			"data index = %d  SRST = %s\n",
 			cmdBuf[adr_Data_c] & 0xff,
-			cmdBuf[adr_Error_c] & 0xff, feat & 0xff,
+			cmdBuf[adr_Error_c] & 0xff, feat,
 			cmdBuf[adr_SecCnt_c] & 0xff,
 			cmdBuf[adr_Sector_c] & 0xff,
 			cmdBuf[adr_CylLo_c] & 0xff,
 			cmdBuf[adr_CylHi_c] & 0xff,
 			cmdBuf[adr_Head_c] & 0xff,
-			cmdBuf[adr_Status_c] & 0xff, curCmd & 0xff, cmds.size(),
+			cmdBuf[adr_Status_c] & 0xff, curCmd, cmds.size(),
 			dataIx, resetting);
 		return ret;
 	}
