@@ -3,6 +3,7 @@
 import java.util.Arrays;
 import java.util.Properties;
 import java.io.*;
+import z80core.Memory;
 
 public class ROM implements Memory {
 	private byte[] mem;
@@ -103,4 +104,6 @@ public class ROM implements Memory {
 			ee.printStackTrace();
 		}
 	}
+
+	public String dumpDebug() { return ""; }
 }

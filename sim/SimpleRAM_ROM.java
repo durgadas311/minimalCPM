@@ -1,6 +1,7 @@
 // Copyright (c) 2021 Douglas Miller <durgadas311@gmail.com>
 
 import java.util.Properties;
+import z80core.Memory;
 
 public class SimpleRAM_ROM implements Memory {
 	private Memory mem;
@@ -42,4 +43,6 @@ public class SimpleRAM_ROM implements Memory {
 		rom.dumpCore(file);
 		mem.dumpCore(file);
 	}
+
+	public String dumpDebug() { return ""; }
 }

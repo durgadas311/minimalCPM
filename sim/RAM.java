@@ -2,6 +2,7 @@
 
 import java.util.Properties;
 import java.io.*;
+import z80core.Memory;
 
 public class RAM implements Memory {
 	private byte[] mem;
@@ -69,4 +70,6 @@ public class RAM implements Memory {
 			ee.printStackTrace();
 		}
 	}
+
+	public String dumpDebug() { return ""; }
 }

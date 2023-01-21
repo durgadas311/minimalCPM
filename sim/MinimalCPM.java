@@ -10,6 +10,7 @@ import java.util.Properties;
 import java.io.*;
 
 import z80core.*;
+import z80debug.*;
 
 // TODO: Make hardware configurable...
 // No I/O (outside Z180), no interrupts, ...
@@ -24,10 +25,6 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 	private boolean running;
 	private boolean stopped;
 	private Semaphore stopWait;
-	private boolean tracing;
-	private int traceCycles;
-	private int traceLow;
-	private int traceHigh;
 	private int[] intRegistry;
 	private int[] intLines;
 	private int intState;
@@ -43,7 +40,7 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 	private int extSpeed3 = 0;
 	private int cpuCycle1ms = 18432;
 	private int nanoSecCycle = 54;	// 54.25347222...
-	private Z80Disassembler disas;
+	private CPUTracer trc;
 	private StdioDebugger dbg;
 	private ReentrantLock cpuLock;
 
@@ -111,7 +108,9 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 		asci = new Z180ASCI(props, this, z180s);
 		cpu = new Z180(this, asci, z180s);
 		mem = new SimpleRAM_ROM(props);
-		disas = new Z180DisassemblerMAC80(mem, cpu);
+
+		s = props.getProperty("trace");
+		trc = new Z80Tracer(props, null, cpu, mem, s);
 		s = props.getProperty("mt011");
 		if (s != null) {
 			addDevice(new MT011(props, s, 0x5c, 1, this));
@@ -121,15 +120,6 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 			addDevice(new RC2014_CF(props, s, 0x10, this));
 		}
 
-		s = props.getProperty("trace");
-		if (s != null) {
-			// Early trace option
-			Vector<String> ret = new Vector<String>();
-			traceCommand(s.split("\\s"), ret, ret);
-			if (ret.size() > 0) {
-				System.err.format("%s\n", join(ret));
-			}
-		}
 		s = props.getProperty("debugger");
 		if (s != null) {
 			dbg = new StdioDebugger(props, this);
@@ -229,6 +219,7 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 	}
 
 	private void reset() {
+		trc.setTrace("off");
 		cpu.reset();
 		mem.reset();
 		asci.reset();
@@ -281,7 +272,7 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 				}
 				if (args[1].equalsIgnoreCase("cpu")) {
 					ret.add(cpu.dumpDebug());
-					ret.add(disas.disas(cpu.getRegPC()) + "\n");
+					ret.add(trc.disas.disas(cpu.getRegPC()) + "\n");
 				}
 				if (args[1].equalsIgnoreCase("z180")) {
 					ret.add(cpu.dumpDebugAux());
@@ -414,7 +405,7 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 
 	//////// Runnable /////////
 	public void run() {
-		String traceStr = "";
+		String xtra = null;
 		int clk = 0;
 		int limit = 0;
 		while (running) {
@@ -424,39 +415,23 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 			int traced = 0; // assuming any tracing cancels 2mS accounting
 			while (running && limit > 0) {
 				int PC = cpu.getRegPC();
-				boolean trace = tracing;
-				if (!trace && (traceCycles > 0 ||
-						(PC >= traceLow && PC < traceHigh))) {
-					trace = true;
-				}
+				boolean trace = trc.preTrace(PC, clock);
 				if (trace) {
 					++traced;
 					int ppc = cpu.phyAddr(PC);
 					int SP = cpu.getRegSP();
 					int psp = cpu.phyAddr(SP);
-					traceStr = String.format("{%05d} %04x: %02x %02x %02x %02x " +
-						": %02x %04x %04x %04x [%04x] %02x%02x",
-						clock & 0xffff,
-						PC, mem.read(ppc), mem.read(ppc + 1),
-						mem.read(ppc + 2), mem.read(ppc + 3),
-						cpu.getRegA(),
-						cpu.getRegBC(),
-						cpu.getRegDE(),
-						cpu.getRegHL(),
-						cpu.getRegSP(),
+					xtra = String.format("%02x%02x",
 						mem.read(psp + 1), mem.read(psp));
 				}
 				clk = cpu.execute();
+				if (trace) {
+					trc.postTrace(PC, clk, xtra);
+				}
 				if (clk < 0) {
 					clk = -clk;
-				} else if (trace) {
-					System.err.format("%s {%d} %s\n", traceStr, clk,
-						disas.disas(PC));
 				}
 				limit -= clk;
-				if (traceCycles > 0) {
-					traceCycles -= clk;
-				}
 				addTicks(clk);
 			}
 			cpuLock.unlock();
@@ -484,55 +459,25 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 	}
 
 	public void startTracing(int cy) {
-		if (cy > 0) {
-			traceCycles = cy;
-		} else {
-			tracing = true;
-		}
 	}
 
 	public void stopTracing() {
-		traceLow = traceHigh = 0;
-		traceCycles = 0;
-		tracing = false;
 	}
 
 	private boolean traceCommand(String[] args, Vector<String> err, Vector<String> ret) {
 		// TODO: do some level of mutexing?
 		if (args[1].equalsIgnoreCase("on")) {
-			startTracing(0);
+			trc.setTrace(":");
 		} else if (args[1].equalsIgnoreCase("off")) {
-			stopTracing();
+			trc.setTrace("off");
 		} else if (args[1].equalsIgnoreCase("cycles") && args.length > 2) {
-			try {
-				traceCycles = Integer.valueOf(args[2]);
-			} catch (Exception ee) {
-				err.add(ee.getMessage());
-				err.add(args[2]);
-				return false;
-			}
+			trc.setTrace(". " + args[2]);
 		} else if (args[1].equalsIgnoreCase("pc") && args.length > 2) {
 			// TODO: this could be a nasty race condition...
-			try {
-				traceLow = Integer.valueOf(args[2], 16);
-			} catch (Exception ee) {
-				err.add(ee.getMessage());
-				err.add(args[2]);
-				return false;
-			}
 			if (args.length > 3) {
-				try {
-					traceHigh = Integer.valueOf(args[3], 16);
-				} catch (Exception ee) {
-					err.add(ee.getMessage());
-					err.add(args[3]);
-					return false;
-				}
+				trc.setTrace(args[2] + ":" + args[3]);
 			} else {
-				traceHigh = 0x10000;
-			}
-			if (traceLow >= traceHigh) {
-				traceLow = traceHigh = 0;
+				trc.setTrace(args[2] + ":");
 			}
 		} else {
 			err.add("unsupported:");
@@ -594,9 +539,6 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 		ret += String.format("CKA1 clock = %gMHz\n", (double)extSpeed2 / 1e6);
 		ret += String.format("CKS clock = %gMHz\n", (double)extSpeed3 / 1e6);
 		ret += String.format("Backlog = %d nS\n", backlogNs);
-		ret += String.format("Tracing = %s\n", tracing);
-		ret += String.format("Trace cycles = %d\n", traceCycles);
-		ret += String.format("Trace PC = %04x %04x\n", traceLow, traceHigh);
 		return ret;
 	}
 }
