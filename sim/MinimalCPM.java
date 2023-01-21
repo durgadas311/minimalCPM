@@ -110,7 +110,7 @@ public class MinimalCPM implements Computer, Commander, BaseSystem,
 		mem = new SimpleRAM_ROM(props);
 
 		s = props.getProperty("trace");
-		trc = new Z80Tracer(props, null, cpu, mem, s);
+		trc = new Z180Tracer(props, null, cpu, mem, s);
 		s = props.getProperty("mt011");
 		if (s != null) {
 			addDevice(new MT011(props, s, 0x5c, 1, this));
