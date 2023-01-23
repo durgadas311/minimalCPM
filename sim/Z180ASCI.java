@@ -74,8 +74,8 @@ public class Z180ASCI implements ComputerIO {
 
 	/////////////////////////////////
 	/// Interfaces for ComputerIO ///
-	public void setCPU(Z180 cpu) {
-		this.cpu = cpu;
+	public void setCPU(CPU acpu) {
+		cpu = (Z180)acpu;
 		ccr = cpu.getCCR();
 		reset();
 	}
