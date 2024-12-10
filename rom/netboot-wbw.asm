@@ -80,7 +80,7 @@ signon:	db	' Network Boot',CR,LF,'$'
 netsyn:	db	CR,LF,BEL,'Netboot syntax error',CR,LF,'$'
 neterr:	db	CR,LF,BEL,'Network boot error',CR,LF,'$'
 if WIZNET
-wizerr:	db	CR,LF,'No NVRAM confiuration$'
+wizerr:	db	CR,LF,'No NVRAM configuration$'
 endif
 
 	cseg

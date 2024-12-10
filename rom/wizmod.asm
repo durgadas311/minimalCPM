@@ -46,7 +46,7 @@ msgout:	mov	a,m
 
 	dseg
 descr:	db	'MT011 WizNet',0
-wizerr:	db	'No NVRAM confiuration',CR,LF,0
+wizerr:	db	'No NVRAM configuration',CR,LF,0
 nvbuf:	ds	512
 
 	end
