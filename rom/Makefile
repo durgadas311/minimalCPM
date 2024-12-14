@@ -1,16 +1,20 @@
+# For alternate location of cpnet-z80 builds...
+#     make ... CPNBLD=/path/to/my/cpnet-z80/builds
+#
 # Burn ROM:
 #	minipro -p "SST39SF040" -s -w mincpm-sc203.rom
 #	minipro -p "MX29F040C@PLCC32" -u -s -w mincpm-minz.rom
 #
 PLAT = sc203
+CPNBLD = /home/drmiller/cpnet-bld
 
 # TODO: get snios.rel locally...
 # WIZSNIOS = zout/snioswiz.rel
 # zout/snioswiz.rel: ~/git/cpnet-z80/src/w5500/snios.asm
 #	zmac --dri -8 -c -s -n --rel -o $@ $<
-WIZBLD = /home/drmiller/cpnet-bld/w5500/mt011
-WZDBLD = /home/drmiller/cpnet-bld/w5500/duo
-SERBLD = /home/drmiller/cpnet-bld/ser-dri/minz
+WIZBLD = $(CPNBLD)/w5500/mt011
+WZDBLD = $(CPNBLD)/w5500/duo
+SERBLD = $(CPNBLD)/ser-dri/minz
 
 WIZCFG = $(WIZBLD)/src/libwiznt.rel $(WIZBLD)/src/libnvram.rel
 WIZSNIOS = $(WIZBLD)/src/snios.rel
