@@ -9,11 +9,16 @@ PLAT = sc203
 # zout/snioswiz.rel: ~/git/cpnet-z80/src/w5500/snios.asm
 #	zmac --dri -8 -c -s -n --rel -o $@ $<
 WIZBLD = /home/drmiller/cpnet-bld/w5500/mt011
+WZDBLD = /home/drmiller/cpnet-bld/w5500/duo
 SERBLD = /home/drmiller/cpnet-bld/ser-dri/minz
 
 WIZCFG = $(WIZBLD)/src/libwiznt.rel $(WIZBLD)/src/libnvram.rel
 WIZSNIOS = $(WIZBLD)/src/snios.rel
-WIZLIB = $(WIZBLD)/src/libwiznt.rel $(WIZBLD)/src/libnvram.rel
+WIZLIB = $(WIZBLD)/src/libwiznt.rel $(WIZBLD)/src/libnvram.rel $(WIZBLD)/src/platform.rel
+
+WZDCFG = $(WZDBLD)/src/libwiznt.rel $(WZDBLD)/src/libnvram.rel
+WZDSNIOS = $(WZDBLD)/src/snios.rel
+WZDLIB = $(WZDBLD)/src/libwiznt.rel $(WZDBLD)/src/libnvram.rel $(WZDBLD)/src/platform.rel
 
 # any copy of ser-dri snios will do...
 SERSNIOS = $(SERBLD)/src/snios.rel
@@ -46,8 +51,12 @@ netboot-asci0.com: zout/netboot.rel $(NBOOT) $(SERSNIOS) zout/z180asci0.rel
 	ld80 -O obj -o $@ $^
 
 netboot-wbw-wiz.mod: zout/netboot-wbw.rel $(NBOOT) $(WIZSNIOS) $(WIZLIB)
-	ld80 -O obj -P 0x100 -o netboot-wbw-wiz.obj $^
-	dd if=netboot-wbw-wiz.obj conv=sync bs=8k of=$@
+	ld80 -O com -o netboot-wbw-wiz.obj $^
+	dd if=netboot-wbw-wiz.obj conv=sync bs=4k of=$@
+
+netboot-wbw-wzd.mod: zout/netboot-wbw.rel $(NBOOT) $(WZDSNIOS) $(WZDLIB)
+	ld80 -O com -o netboot-wbw-wzd.obj $^
+	dd if=netboot-wbw-wzd.obj conv=sync bs=4k of=$@
 
 config.lib: $(PLAT).lib __FRC__
 	cp $< $@

@@ -5,7 +5,7 @@ WIZNET	equ	1	; compiling for WizNET with NVRAM?
 
 	maclib	z180
 
-;	extrn	descr
+	extrn	platfm
 if WIZNET
 	extrn	wizcfg
 	public	nvbuf
@@ -51,7 +51,7 @@ DAT	equ	5
 	cseg
 	lxi	sp,nbstk
 	call	crlf
-	lxi	h,descr
+	lxi	h,platfm
 	call	msgout
 	lxi	h,signon
 	call	msgout
@@ -75,7 +75,6 @@ syntax:
 	jr	err0
 
 	dseg
-descr:	db	'MT011 WizNET$'
 signon:	db	' Network Boot',CR,LF,'$'
 netsyn:	db	CR,LF,BEL,'Netboot syntax error',CR,LF,'$'
 neterr:	db	CR,LF,BEL,'Network boot error',CR,LF,'$'
